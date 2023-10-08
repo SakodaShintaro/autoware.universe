@@ -4,9 +4,8 @@ project(nerf_based_localizer)
 find_package(ament_cmake_auto REQUIRED)
 ament_auto_find_build_dependencies()
 
-find_package(CUDA)
-find_package(CUDAToolkit)
-find_package(CUDNN)
+find_package(CUDA REQUIRED)
+find_package(CUDAToolkit REQUIRED)
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
 
@@ -14,6 +13,8 @@ if(NOT ${CUDA_FOUND})
   message(WARNING "cuda is not found, so the nerf_based_localizer package won't be built.")
   return()
 endif()
+
+add_definitions(-DHALF_PRECISION)
 
 # libtorch
 set(CMAKE_PREFIX_PATH ${DCMAKE_PREFIX_PATH}$ ${CMAKE_SOURCE_DIR}/external/libtorch/)
