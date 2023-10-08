@@ -5,8 +5,8 @@
 #ifndef NERF_BASED_LOCALIZER__TRAIN_MANAGER_HPP_
 #define NERF_BASED_LOCALIZER__TRAIN_MANAGER_HPP_
 
-#include "../dataset.hpp"
-#include "../renderer.hpp"
+#include "../../src/nerf/dataset.hpp"
+#include "../../src/nerf/renderer.hpp"
 
 #include <torch/torch.h>
 

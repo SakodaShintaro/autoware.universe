@@ -1,5 +1,5 @@
-#include "../localizer.hpp"
-#include "../utils.hpp"
+#include "../../src/nerf/localizer.hpp"
+#include "../../src/nerf/utils.hpp"
 #include "main_functions.hpp"
 
 #include <fcntl.h>
@@ -49,7 +49,7 @@ void render(Localizer & localizer, torch::Tensor pose)
   torch::Tensor pose_camera = localizer.world2camera(pose);
   torch::Tensor image = localizer.render_image(pose_camera);
   utils::write_image_tensor("image.png", image);
-  std::cout << "WASDで移動, E:上昇, Q下降, J:左回転, K:下回転, L:右回転, I:上回転, O:ROll+, U:ROll-"
+  std::cout << "Move by WASD, E:Up, Q:Down, J:YAW+, K:PITCH+, L:YAW-, I:PITCH-, O:ROll+, U:ROll-"
             << std::endl;
 }
 
@@ -64,16 +64,12 @@ void walk(const std::string & train_result_dir)
   float step = 0.2;
   constexpr float degree = 10.0;
 
-  // Poseは世界座標系で考える
-  // つまりXが前方
-  // Yが左方
-  // Zが上方
   render(localizer, pose);
 
   while (1) {
     if (kbhit()) {
       const char pushed_key = getchar();
-      printf("'%c'を押しました。\n", pushed_key);
+      printf("pushed '%c'\n", pushed_key);
       torch::Tensor orientation = pose.index({Slc(0, 3), Slc(0, 3)});
       if (pushed_key == 'w') {
         torch::Tensor tmp = torch::tensor({step, 0.0f, 0.0f}, torch::kFloat32).view({3, 1}).cuda();

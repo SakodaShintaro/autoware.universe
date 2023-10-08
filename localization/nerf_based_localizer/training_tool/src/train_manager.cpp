@@ -4,9 +4,9 @@
 
 #include "train_manager.hpp"
 
-#include "../CustomOps/CustomOps.hpp"
-#include "../stop_watch.hpp"
-#include "../utils.hpp"
+#include "../../src/nerf/CustomOps/CustomOps.hpp"
+#include "../../src/nerf/stop_watch.hpp"
+#include "../../src/nerf/utils.hpp"
 
 #include <experimental/filesystem>
 #include <opencv2/core.hpp>

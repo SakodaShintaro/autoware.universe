@@ -1,6 +1,6 @@
-#include "../localizer.hpp"
-#include "../stop_watch.hpp"
-#include "../utils.hpp"
+#include "../../src/nerf/localizer.hpp"
+#include "../../src/nerf/stop_watch.hpp"
+#include "../../src/nerf/utils.hpp"
 #include "main_functions.hpp"
 
 #include <experimental/filesystem>
