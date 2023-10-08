@@ -43,32 +43,33 @@ NerfBasedLocalizer::NerfBasedLocalizer(
 
   initial_pose_with_covariance_subscriber_ =
     this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
-      "initial_pose_with_covariance", 100,
+      "~/input/pose", 100,
       std::bind(&NerfBasedLocalizer::callback_initial_pose, this, std::placeholders::_1));
 
   int image_queue_size = this->declare_parameter("input_sensor_points_queue_size", 0);
   image_queue_size = std::max(image_queue_size, 0);
   image_subscriber_ = this->create_subscription<sensor_msgs::msg::Image>(
-    "image", rclcpp::SensorDataQoS().keep_last(image_queue_size),
+    "~/input/image", rclcpp::SensorDataQoS().keep_last(image_queue_size),
     std::bind(&NerfBasedLocalizer::callback_image, this, std::placeholders::_1));
 
   // create publishers
-  nerf_pose_publisher_ = this->create_publisher<geometry_msgs::msg::PoseStamped>("nerf_pose", 10);
+  nerf_pose_publisher_ =
+    this->create_publisher<geometry_msgs::msg::PoseStamped>("~/output/pose", 10);
   nerf_pose_with_covariance_publisher_ =
     this->create_publisher<geometry_msgs::msg::PoseWithCovarianceStamped>(
-      "nerf_pose_with_covariance", 10);
-  nerf_score_publisher_ = this->create_publisher<std_msgs::msg::Float32>("nerf_score", 10);
-  nerf_image_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("nerf_image", 10);
+      "~/output/pose_with_covariance", 10);
+  nerf_score_publisher_ = this->create_publisher<std_msgs::msg::Float32>("~/output/score", 10);
+  nerf_image_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("~/output/image", 10);
 
   previous_score_ = this->get_parameter("base_score").as_double();
 
   service_ = this->create_service<tier4_localization_msgs::srv::PoseWithCovarianceStamped>(
-    "nerf_service",
+    "~/service/optimize_pose",
     std::bind(&NerfBasedLocalizer::service, this, std::placeholders::_1, std::placeholders::_2),
     rclcpp::ServicesQoS().get_rmw_qos_profile());
 
   service_trigger_node_ = this->create_service<std_srvs::srv::SetBool>(
-    "trigger_node_srv",
+    "~/service/trigger_node",
     std::bind(
       &NerfBasedLocalizer::service_trigger_node, this, std::placeholders::_1,
       std::placeholders::_2),
