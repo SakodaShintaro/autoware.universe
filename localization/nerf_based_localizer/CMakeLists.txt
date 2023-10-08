@@ -38,7 +38,6 @@ target_link_libraries(nerf_based_localizer
   ${TORCH_CUDA_LIBRARIES}
   ${OpenCV_LIBS}
   stdc++fs
-  gtsam
 )
 
 ament_auto_package(
