@@ -18,7 +18,7 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   tf_listener_(tf_buffer_),
   tf2_broadcaster_(*this),
   map_frame_("map"),
-  is_activated_(false),
+  is_activated_(true),
   optimization_mode_(this->declare_parameter<int>("optimization_mode"))
 {
   this->declare_parameter("save_image", false);
@@ -225,9 +225,7 @@ NerfBasedLocalizer::localize(
   // Accessing image data
   torch::Tensor image_tensor = torch::tensor(image_msg.data);
   image_tensor = image_tensor.view({height, width, 3});
-  if (true) {
-    image_tensor = image_tensor.index({Slc(0, 850)});
-  }
+  image_tensor = image_tensor.index({Slc(0, 850)});
   image_tensor = image_tensor.to(torch::kFloat32);
   image_tensor /= 255.0;
   image_tensor = image_tensor.flip(2);  // BGR to RGB
