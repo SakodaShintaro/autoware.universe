@@ -61,7 +61,20 @@ ros2 launch autoware_launch logging_simulator.launch.xml \
 
 ### Prepare training data
 
-TODO
+Use `prepare_data.py`.
+
+```bash
+python3 prepare_data.py /path/to/rosbag /path/to/prepared_data/
+```
+
+The rosbag must contain the following topics.
+
+| Topic name                                                           | Message type                                    | Description                     |
+| :------------------------------------------------------------------- | :---------------------------------------------- | :------------------------------ |
+| `/tf_static`                                                         | `tf2_msgs::msg::TFMessage`                      | tf_static                       |
+| `/localization/pose_twist_fusion_filter/biased_pose_with_covariance` | `geometry_msgs::msg::PoseWithCovarianceStamped` | EKF Pose without IMU correction |
+| `/sensing/camera/traffic_light/image_raw`                            | `sensor_msgs::msg::Image`                       | Camera Image                    |
+| `/sensing/camera/traffic_light/camera_info`                          | `sensor_msgs::msg::CameraInfo`                  | Camera Info                     |
 
 ### Execute training
 
@@ -71,3 +84,21 @@ Use training_tool.
 cd nerf_based_localizer/training_tool/script
 ./build_and_exec_training.sh /path/to/result_dir/ /path/to/prepared_data/
 ```
+
+## Principle
+
+NeRF, standing for Neural Radiance Fields, presents a novel approach to synthesize novel views of a scene by leveraging the power of neural networks. It was introduced with an aim to handle the challenges of view synthesis, which includes creating novel, previously unseen views of a 3D scene given a sparse set of input photographs.
+
+Training Phase: The model is trained with a set of 2D images of a 3D scene and their corresponding camera parameters (position and orientation). The neural network learns to predict the color and transparency of rays cast through the scene, effectively learning a representation of the 3D scene. The objective is to minimize the difference between the rendered images and the input images.
+
+Inference Phase: After training, NeRF synthesizes novel views of the scene by sampling and summing the colors of volumetric points along the rays cast from a new camera viewpoint. The synthesized images exhibit high-quality view synthesis even under significant viewpoint changes.
+
+### Application in Localization
+
+Implementing NeRF for localization involves utilizing the learned 3D scene representation to estimate the position and orientation of a camera (or observer) in the scene. By comparing the synthesized views and the actual camera view, the algorithm iteratively refines the estimated camera parameters to minimize the difference between the rendered and actual views.
+
+This approach unlocks the potential to achieve accurate and robust self-localization in various environments, allowing devices and robots to comprehend their position and orientation within a previously learned 3D space.
+
+## Acknowledgement
+
+The code for this package is based on [F2-NeRF](https://github.com/Totoro97/f2-nerf) with significant code changes.
