@@ -40,8 +40,7 @@ Dataset::Dataset(const std::string & data_path)
       const int POSE_NUM = 12;       //(3, 4)
       const int INTRINSIC_NUM = 9;   //(3, 3)
       const int DISTORTION_NUM = 4;  //(k1, k2, p1, p2)
-      const int BOUNDS_NUM = 2;      //(near, far)
-      CHECK(tokens.size() == POSE_NUM + INTRINSIC_NUM + DISTORTION_NUM + BOUNDS_NUM);
+      CHECK(tokens.size() == POSE_NUM + INTRINSIC_NUM + DISTORTION_NUM);
       Tensor pose = torch::zeros({3, 4}, torch::kFloat32);
       for (int i = 0; i < POSE_NUM; i++) {
         pose.index_put_({i / 4, i % 4}, std::stof(tokens[i]));
@@ -61,11 +60,6 @@ Dataset::Dataset(const std::string & data_path)
         dist_param.index_put_({i}, std::stof(tokens[POSE_NUM + INTRINSIC_NUM + i]));
       }
       dist_params_vec.push_back(dist_param);
-
-      Tensor bound = torch::zeros({2}, torch::kFloat32);
-      for (int i = 0; i < BOUNDS_NUM; i++) {
-        bound.index_put_({i}, std::stof(tokens[POSE_NUM + INTRINSIC_NUM + DISTORTION_NUM + i]));
-      }
     }
 
     n_images = poses_vec.size();
