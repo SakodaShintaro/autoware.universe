@@ -32,7 +32,7 @@ If libtorch is prepared, it can be built as a normal package.
 
 ## How to launch
 
-Set the train result directory to the parameter `train_result_dir` in the `nerf_based_localizer/config` file.
+Set the train result directory to the parameter `train_result_dir` in the `nerf_based_localizer/config/nerf_based_localizer.param.yaml`.
 
 When launching Autoware, set `nerf` for `pose_source`.
 
@@ -55,7 +55,7 @@ ros2 launch autoware_launch logging_simulator.launch.xml \
     control:=false
 ```
 
-[The rosbag for AR tag-based localizer](https://drive.google.com/file/d/1uMVwQQFcfs8JOqfoA1FqfH_fLPwQ71jK/view) can be used.
+[This trained weights](https://drive.google.com/file/d/1w4hLw7aJ_o6OM8XCCXyNPZTGIy4ah9aZ/view?usp=sharing) and [this rosbag data](https://drive.google.com/file/d/1uMVwQQFcfs8JOqfoA1FqfH_fLPwQ71jK/view) can be used as sample data.
 
 ## How to train
 
@@ -76,6 +76,10 @@ The rosbag must contain the following topics.
 | `/sensing/camera/traffic_light/image_raw`                            | `sensor_msgs::msg::Image`                       | Camera Image                    |
 | `/sensing/camera/traffic_light/camera_info`                          | `sensor_msgs::msg::CameraInfo`                  | Camera Info                     |
 
+For example, the following rosbag obtained from AWSIM can be used.
+
+<https://drive.google.com/file/d/1JM8SgrqxZevyS9thnNMkMx8u8JF2oKhu/view?usp=drive_link>
+
 ### Execute training
 
 Use training_tool.
@@ -84,6 +88,8 @@ Use training_tool.
 cd nerf_based_localizer/training_tool/script
 ./build_and_exec_training.sh /path/to/result_dir/ /path/to/prepared_data/
 ```
+
+Set the train result directory to the parameter `train_result_dir` in the `nerf_based_localizer/config/nerf_based_localizer.param.yaml`.
 
 ## Principle
 
