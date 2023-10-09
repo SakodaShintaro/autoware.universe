@@ -18,7 +18,13 @@ add_definitions(-DHALF_PRECISION)
 
 # libtorch
 set(CMAKE_PREFIX_PATH ${DCMAKE_PREFIX_PATH}$ ${CMAKE_SOURCE_DIR}/external/libtorch/)
-find_package(Torch REQUIRED PATHS ${CMAKE_SOURCE_DIR}/external/libtorch NO_DEFAULT_PATH)
+find_package(Torch PATHS ${CMAKE_SOURCE_DIR}/external/libtorch NO_DEFAULT_PATH)
+
+# skip if libtorch is not found
+if(NOT Torch_FOUND)
+  return()
+endif()
+
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS} -w")
 link_directories(${CMAKE_SOURCE_DIR}/external/libtorch/lib/)
 include_directories(${TORCH_INCLUDE_DIRS})
