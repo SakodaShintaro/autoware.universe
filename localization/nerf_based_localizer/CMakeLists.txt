@@ -14,8 +14,6 @@ if(NOT ${CUDA_FOUND})
   return()
 endif()
 
-add_definitions(-DHALF_PRECISION)
-
 # libtorch
 set(CMAKE_PREFIX_PATH ${DCMAKE_PREFIX_PATH}$ ${CMAKE_SOURCE_DIR}/external/libtorch/)
 find_package(Torch PATHS ${CMAKE_SOURCE_DIR}/external/libtorch NO_DEFAULT_PATH)

@@ -14,13 +14,8 @@ using Tensor = torch::Tensor;
 constexpr float RES_FINE_POW_2 = 10.f;
 constexpr float RES_BASE_POW_2 = 3.f;
 
-#ifdef HALF_PRECISION
-#define CUDAFlex torch::TensorOptions().dtype(torch::kFloat16).device(torch::kCUDA)
-#define FlexType __half
-#else
-#define CUDAFlex torch::TensorOptions().dtype(torch::kFloat32).device(torch::kCUDA)
-#define FlexType float
-#endif
+const auto CUDAFlex = torch::TensorOptions().dtype(torch::kFloat16).device(torch::kCUDA);
+using FlexType = __half;
 
 __device__ inline void calculate_pos_and_w(
   const Eigen::Vector3f & pt, const int local_size, const int * const prim_pool,
