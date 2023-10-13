@@ -95,7 +95,7 @@ Set the train result directory to the parameter `train_result_dir` in the `nerf_
 
 ## Principle
 
-NeRF, standing for Neural Radiance Fields, presents a novel approach to synthesize novel views of a scene by leveraging the power of neural networks. It was introduced with an aim to handle the challenges of view synthesis, which includes creating novel, previously unseen views of a 3D scene given a sparse set of input photographs.
+[NeRF](https://www.matthewtancik.com/nerf), standing for Neural Radiance Fields, presents a novel approach to synthesize novel views of a scene by leveraging the power of neural networks. It was introduced with an aim to handle the challenges of view synthesis, which includes creating novel, previously unseen views of a 3D scene given a sparse set of input photographs.
 
 Training Phase: The model is trained with a set of 2D images of a 3D scene and their corresponding camera parameters (position and orientation). The neural network learns to predict the color and transparency of rays cast through the scene, effectively learning a representation of the 3D scene. The objective is to minimize the difference between the rendered images and the input images.
 
