@@ -18,14 +18,13 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   tf_listener_(tf_buffer_),
   tf2_broadcaster_(*this),
   map_frame_("map"),
+  target_frame_(this->declare_parameter<std::string>("target_frame")),
+  particle_num_(this->declare_parameter<int>("particle_num")),
+  output_covariance_(this->declare_parameter<double>("output_covariance")),
+  base_score_(this->declare_parameter<double>("base_score")),
   is_activated_(true),
   optimization_mode_(this->declare_parameter<int>("optimization_mode"))
 {
-  this->declare_parameter("particle_num", 100);
-  this->declare_parameter("output_covariance", 0.1);
-  this->declare_parameter("base_score", 40.0f);
-  target_frame_ = this->declare_parameter<std::string>("target_frame");
-
   LocalizerParam param;
   param.train_result_dir = this->declare_parameter<std::string>("train_result_dir");
   param.render_pixel_num = this->declare_parameter<int>("render_pixel_num");
@@ -43,10 +42,8 @@ NerfBasedLocalizer::NerfBasedLocalizer(
       "~/input/pose", 100,
       std::bind(&NerfBasedLocalizer::callback_initial_pose, this, std::placeholders::_1));
 
-  int image_queue_size = this->declare_parameter("input_sensor_points_queue_size", 0);
-  image_queue_size = std::max(image_queue_size, 0);
   image_subscriber_ = this->create_subscription<sensor_msgs::msg::Image>(
-    "~/input/image", rclcpp::SensorDataQoS().keep_last(image_queue_size),
+    "~/input/image", rclcpp::SensorDataQoS().keep_last(0),
     std::bind(&NerfBasedLocalizer::callback_image, this, std::placeholders::_1));
 
   // create publishers
@@ -58,7 +55,7 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   nerf_score_publisher_ = this->create_publisher<std_msgs::msg::Float32>("~/output/score", 10);
   nerf_image_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("~/output/image", 10);
 
-  previous_score_ = this->get_parameter("base_score").as_double();
+  previous_score_ = base_score_;
 
   service_ = this->create_service<tier4_localization_msgs::srv::PoseWithCovarianceStamped>(
     "~/service/optimize_pose",
@@ -141,13 +138,12 @@ void NerfBasedLocalizer::callback_image(const sensor_msgs::msg::Image::ConstShar
   pose_with_cov_msg.header.frame_id = map_frame_;
   pose_with_cov_msg.header.stamp = image_msg_ptr->header.stamp;
   pose_with_cov_msg.pose.pose = pose_msg;
-  const double cov = this->get_parameter("output_covariance").as_double();
-  pose_with_cov_msg.pose.covariance[0] = cov;
-  pose_with_cov_msg.pose.covariance[7] = cov;
-  pose_with_cov_msg.pose.covariance[14] = cov;
-  pose_with_cov_msg.pose.covariance[21] = cov * 10;
-  pose_with_cov_msg.pose.covariance[28] = cov * 10;
-  pose_with_cov_msg.pose.covariance[35] = cov * 10;
+  pose_with_cov_msg.pose.covariance[0] = output_covariance_;
+  pose_with_cov_msg.pose.covariance[7] = output_covariance_;
+  pose_with_cov_msg.pose.covariance[14] = output_covariance_;
+  pose_with_cov_msg.pose.covariance[21] = output_covariance_ * 10;
+  pose_with_cov_msg.pose.covariance[28] = output_covariance_ * 10;
+  pose_with_cov_msg.pose.covariance[35] = output_covariance_ * 10;
   nerf_pose_with_covariance_publisher_->publish(pose_with_cov_msg);
 
   // (3) publish score
@@ -259,10 +255,9 @@ NerfBasedLocalizer::localize(
   std::vector<Particle> particles;
 
   if (optimization_mode_ == 0) {
-    const double base_score = this->get_parameter("base_score").as_double();
-    const float noise_coeff = (base_score > 0 ? base_score / previous_score_ : 1.0f);
+    const float noise_coeff = (base_score_ > 0 ? base_score_ / previous_score_ : 1.0f);
     particles = localizer_core_.optimize_pose_by_random_search(
-      initial_pose, image_tensor, this->get_parameter("particle_num").as_int(), noise_coeff);
+      initial_pose, image_tensor, particle_num_, noise_coeff);
     optimized_pose = Localizer::calc_average_pose(particles);
   } else {
     std::vector<torch::Tensor> optimized_poses =
@@ -330,7 +325,7 @@ NerfBasedLocalizer::localize(
   transform.transform.translation.z = result_pose_base_link.position.z;
   transform.transform.rotation = result_pose_base_link.orientation;
   transform.header = header;
-  transform.header.frame_id = "map";
+  transform.header.frame_id = map_frame_;
   transform.child_frame_id = "nerf_base_link";
   tf2_broadcaster_.sendTransform(transform);
 
