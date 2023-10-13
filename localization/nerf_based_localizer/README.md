@@ -2,6 +2,8 @@
 
 NeRFBasedLocalizer is a vision-based localization package.
 
+![example_of_result](./doc_image/example_of_result.png)
+
 ## Node diagram
 
 ![node diagram](./doc_image/node_diagram.drawio.svg)
