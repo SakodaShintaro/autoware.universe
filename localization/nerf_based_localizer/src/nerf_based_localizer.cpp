@@ -21,9 +21,6 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   is_activated_(true),
   optimization_mode_(this->declare_parameter<int>("optimization_mode"))
 {
-  this->declare_parameter("save_image", false);
-  this->declare_parameter("save_particles", false);
-  this->declare_parameter("save_particles_images", false);
   this->declare_parameter("particle_num", 100);
   this->declare_parameter("output_covariance", 0.1);
   this->declare_parameter("base_score", 40.0f);
@@ -160,16 +157,6 @@ void NerfBasedLocalizer::callback_image(const sensor_msgs::msg::Image::ConstShar
   nerf_image_publisher_->publish(image_msg);
 }
 
-void NerfBasedLocalizer::save_image(
-  const torch::Tensor image_tensor, const std::string & prefix, int save_id)
-{
-  std::stringstream ss;
-  ss << prefix;
-  ss << std::setfill('0') << std::setw(8) << save_id;
-  ss << ".png";
-  utils::write_image_tensor(ss.str(), image_tensor);
-}
-
 void NerfBasedLocalizer::service(
   const tier4_localization_msgs::srv::PoseWithCovarianceStamped::Request::SharedPtr req,
   tier4_localization_msgs::srv::PoseWithCovarianceStamped::Response::SharedPtr res)
@@ -276,26 +263,6 @@ NerfBasedLocalizer::localize(
     const float noise_coeff = (base_score > 0 ? base_score / previous_score_ : 1.0f);
     particles = localizer_core_.optimize_pose_by_random_search(
       initial_pose, image_tensor, this->get_parameter("particle_num").as_int(), noise_coeff);
-
-    if (this->get_parameter("save_particles_images").as_bool()) {
-      std::sort(particles.begin() + 1, particles.end(), [](const Particle & a, const Particle & b) {
-        return a.weight > b.weight;
-      });
-      static int cnt = 0;
-      namespace fs = std::experimental::filesystem::v1;
-      fs::create_directories("./result_images/trial/particles_images/");
-
-      for (int32_t i = 0; i < particles.size(); i++) {
-        torch::Tensor nerf_image = localizer_core_.render_image(particles[i].pose);
-        float score = utils::calc_loss(nerf_image, image_tensor);
-        std::stringstream ss;
-        ss << "./result_images/trial/particles_images/";
-        save_image(nerf_image, ss.str(), i);
-        particles[i].weight = score;
-      }
-      cnt++;
-    }
-
     optimized_pose = Localizer::calc_average_pose(particles);
   } else {
     std::vector<torch::Tensor> optimized_poses =
@@ -308,36 +275,6 @@ NerfBasedLocalizer::localize(
 
   RCLCPP_INFO_STREAM(this->get_logger(), "score = " << score);
   previous_score_ = score;
-  if (this->get_parameter("save_particles").as_bool()) {
-    static int cnt = 0;
-    namespace fs = std::experimental::filesystem::v1;
-    fs::create_directories("./result_images/trial/particles/");
-    std::stringstream ss;
-    ss << std::setw(8) << std::setfill('0') << cnt;
-    std::ofstream ofs("./result_images/trial/particles/" + ss.str() + ".tsv");
-    ofs << "m00\tm01\tm02\tm03\tm10\tm11\tm12\tm13\tm20\tm21\tm22\tm23\tweight" << std::endl;
-    ofs << std::fixed;
-    for (int p = 0; p < particles.size(); p++) {
-      for (int i = 0; i < 3; i++) {
-        for (int j = 0; j < 4; j++) {
-          ofs << particles[p].pose[i][j].item<float>() << "\t";
-        }
-      }
-      ofs << particles[p].weight << std::endl;
-    }
-    cnt++;
-  }
-
-  // save image
-  if (this->get_parameter("save_image").as_bool()) {
-    static int cnt = 0;
-    namespace fs = std::experimental::filesystem::v1;
-    fs::create_directories("./result_images/trial/pred/");
-    fs::create_directories("./result_images/trial/gt/");
-    save_image(nerf_image, "./result_images/trial/pred/", cnt);
-    save_image(image_tensor, "./result_images/trial/gt/", cnt);
-    cnt++;
-  }
 
   // Convert pose to base_link
   optimized_pose = localizer_core_.camera2world(optimized_pose);

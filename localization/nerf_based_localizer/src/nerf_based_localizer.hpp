@@ -43,8 +43,6 @@ private:
   std::tuple<geometry_msgs::msg::Pose, sensor_msgs::msg::Image, std_msgs::msg::Float32> localize(
     const geometry_msgs::msg::Pose & pose_msg, const sensor_msgs::msg::Image & image_msg);
 
-  void save_image(const torch::Tensor image_tensor, const std::string & prefix, int save_id);
-
   // NerfBasedLocalizer subscribes to the following topics:
   // (1) initial_pose_with_covariance [geometry_msgs::msg::PoseWithCovarianceStamped]
   rclcpp::Subscription<geometry_msgs::msg::PoseWithCovarianceStamped>::SharedPtr
