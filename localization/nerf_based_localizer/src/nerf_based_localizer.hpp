@@ -73,7 +73,7 @@ private:
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr service_trigger_node_;
 
   const std::string map_frame_;
-  const std::string target_frame_;
+  std::string target_frame_;
   const int particle_num_;
   const double output_covariance_;
   const float base_score_;

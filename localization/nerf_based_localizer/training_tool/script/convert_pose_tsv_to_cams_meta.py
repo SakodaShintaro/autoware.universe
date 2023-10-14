@@ -23,10 +23,10 @@ def load_camera_info_from_yaml(filename):
 
 
 AXIS_CONVERT_MAT_W2N = np.array(
-    [[0, -1,  0,  0],
-     [0,  0, +1,  0],
-     [-1, 0,  0,  0],
-     [0,  0,  0, +1]], dtype=np.float64
+    [[+1,  0,  0,  0],
+     [ 0, -1,  0,  0],
+     [ 0,  0, -1,  0],
+     [ 0,  0,  0, +1]], dtype=np.float64
 )
 
 

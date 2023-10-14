@@ -11,6 +11,35 @@
 
 #include <sstream>
 
+geometry_msgs::msg::Pose transform_pose(
+  const geometry_msgs::msg::Pose & pose, const geometry_msgs::msg::TransformStamped & transform)
+{
+  Eigen::Quaterniond R1(
+    transform.transform.rotation.w, transform.transform.rotation.x, transform.transform.rotation.y,
+    transform.transform.rotation.z);
+  Eigen::Vector3d t1(
+    transform.transform.translation.x, transform.transform.translation.y,
+    transform.transform.translation.z);
+
+  Eigen::Quaterniond R2(
+    pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
+  Eigen::Vector3d t2(pose.position.x, pose.position.y, pose.position.z);
+
+  Eigen::Quaterniond R = R2 * R1;
+  Eigen::Vector3d t = R2._transformVector(t1) + t2;
+
+  geometry_msgs::msg::Pose result_pose;
+  result_pose.orientation.x = R.x();
+  result_pose.orientation.y = R.y();
+  result_pose.orientation.z = R.z();
+  result_pose.orientation.w = R.w();
+  result_pose.position.x = t.x();
+  result_pose.position.y = t.y();
+  result_pose.position.z = t.z();
+
+  return result_pose;
+}
+
 NerfBasedLocalizer::NerfBasedLocalizer(
   const std::string & name_space, const rclcpp::NodeOptions & options)
 : Node("nerf_based_localizer", name_space, options),
@@ -123,6 +152,8 @@ void NerfBasedLocalizer::callback_image(const sensor_msgs::msg::Image::ConstShar
     initial_pose_msg_ptr_array_.back();
   initial_pose_msg_ptr_array_.pop_back();
 
+  target_frame_ = image_msg_ptr->header.frame_id;
+
   // Process
   const auto [pose_msg, image_msg, score_msg] = localize(pose_base_link->pose.pose, *image_msg_ptr);
 
@@ -204,6 +235,9 @@ NerfBasedLocalizer::localize(
   RCLCPP_INFO_STREAM(
     this->get_logger(),
     "Image received. width: " << width << ", height: " << height << ", step: " << step);
+  RCLCPP_INFO_STREAM(
+    this->get_logger(), "pos_before\t" << pose_msg.position.x << "\t" << pose_msg.position.y << "\t"
+                                       << pose_msg.position.z);
 
   // Accessing image data
   torch::Tensor image_tensor = torch::tensor(image_msg.data);
@@ -216,16 +250,16 @@ NerfBasedLocalizer::localize(
     image_tensor, localizer_core_.infer_height(), localizer_core_.infer_width());
   image_tensor = image_tensor.to(torch::kCUDA);
 
-  geometry_msgs::msg::PoseWithCovarianceStamped pose_lidar;
+  geometry_msgs::msg::PoseWithCovarianceStamped pose_camera;
   try {
     geometry_msgs::msg::TransformStamped transform =
-      tf_buffer_.lookupTransform(target_frame_, "base_link", tf2::TimePointZero);
-    tf2::doTransform(pose_msg, pose_lidar.pose.pose, transform);
+      tf_buffer_.lookupTransform("base_link", target_frame_, tf2::TimePointZero);
+    pose_camera.pose.pose = transform_pose(pose_msg, transform);
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(this->get_logger(), "%s", ex.what());
   }
 
-  const geometry_msgs::msg::Pose pose = pose_lidar.pose.pose;
+  const geometry_msgs::msg::Pose pose = pose_camera.pose.pose;
 
   Eigen::Quaternionf quat_in(
     pose.orientation.w, pose.orientation.x, pose.orientation.y, pose.orientation.z);
@@ -295,8 +329,8 @@ NerfBasedLocalizer::localize(
   geometry_msgs::msg::Pose result_pose_base_link;
   try {
     geometry_msgs::msg::TransformStamped transform =
-      tf_buffer_.lookupTransform("base_link", target_frame_, tf2::TimePointZero);
-    tf2::doTransform(result_pose_lidar, result_pose_base_link, transform);
+      tf_buffer_.lookupTransform(target_frame_, "base_link", tf2::TimePointZero);
+    result_pose_base_link = transform_pose(result_pose_lidar, transform);
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(this->get_logger(), "%s", ex.what());
   }
@@ -328,6 +362,11 @@ NerfBasedLocalizer::localize(
   transform.header.frame_id = map_frame_;
   transform.child_frame_id = "nerf_base_link";
   tf2_broadcaster_.sendTransform(transform);
+
+  RCLCPP_INFO_STREAM(
+    this->get_logger(), "pos_after\t" << result_pose_base_link.position.x << "\t"
+                                      << result_pose_base_link.position.y << "\t"
+                                      << result_pose_base_link.position.z);
 
   RCLCPP_INFO_STREAM(get_logger(), "localize time: " << timer.elapsed_milli_seconds());
 

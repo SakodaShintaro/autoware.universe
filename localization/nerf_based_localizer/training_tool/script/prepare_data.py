@@ -32,12 +32,13 @@ def create_reader(input_bag_dir: str, storage_id: str):
     return reader, storage_options, converter_options
 
 
-def transform_pose_base_link_2_camera(pose: PoseWithCovarianceStamped, target_frame, tf_buffer):
+def transform_pose_base_link_2_camera(pose: Pose, target_frame: str, tf_buffer, time):
     # get static transform
     transform = tf_buffer.lookup_transform(
         target_frame="base_link",
         source_frame=target_frame,
-        time=pose.header.stamp)
+        time=time)
+
     # transform pose
     R1: geometry_msgs.msg.Quaternion = transform.transform.rotation
     R1: np.ndarray = Rotation.from_quat([R1.x, R1.y, R1.z, R1.w]).as_matrix()
@@ -45,13 +46,13 @@ def transform_pose_base_link_2_camera(pose: PoseWithCovarianceStamped, target_fr
     t1: np.ndarray = np.array([t1.x, t1.y, t1.z])
 
     # pose
-    R2: geometry_msgs.msg.Quaternion = pose.pose.pose.orientation
+    R2: geometry_msgs.msg.Quaternion = pose.orientation
     R2: np.ndarray = Rotation.from_quat([R2.x, R2.y, R2.z, R2.w]).as_matrix()
-    t2: geometry_msgs.msg.Vector3 = pose.pose.pose.position
+    t2: geometry_msgs.msg.Vector3 = pose.position
     t2: np.ndarray = np.array([t2.x, t2.y, t2.z])
 
     # transform
-    R: np.ndarray = np.dot(R1, R2)
+    R: np.ndarray = np.dot(R2, R1)
     t: np.ndarray = np.dot(R2, t1) + t2
     q: np.ndarray = Rotation.from_matrix(R).as_quat()
 
@@ -84,7 +85,7 @@ if __name__ == "__main__":
     crop_height = args.crop_height
     use_cvt_color = args.use_cvt_color
 
-    target_frame = "camera0/camera_link"
+    target_frame = None
     image_topic_name = "/sensing/camera/traffic_light/image_raw"
     camera_info_topic_name = "/sensing/camera/traffic_light/camera_info"
     pose_topic_name = "/localization/pose_twist_fusion_filter/biased_pose_with_covariance"
@@ -128,17 +129,20 @@ if __name__ == "__main__":
             index_images_all += 1
             if diff == 0 or index_images_all % skip != 0:
                 continue
+            target_frame = image_msg.header.frame_id
             image_timestamp_list.append(t)
             image_list.append(curr_image)
         elif topic == pose_topic_name:
             pose_msg = deserialize_message(data, pose_topic_type)
-            # try:
-            #     pose = transform_pose_base_link_2_camera(
-            #         pose_msg, target_frame, tf_buffer)
-            # except Exception as e:
-            #     print(e)
-            #     continue
             pose = pose_msg.pose.pose if pose_topic_type == PoseWithCovarianceStamped() else pose_msg.pose
+            if target_frame is None:
+                continue
+            try:
+                pose = transform_pose_base_link_2_camera(
+                    pose, target_frame, tf_buffer, pose_msg.header.stamp)
+            except Exception as e:
+                print(e)
+                continue
             df_pose.loc[len(df_pose)] = [
                 t,
                 pose.position.x,

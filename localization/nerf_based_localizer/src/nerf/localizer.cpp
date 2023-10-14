@@ -48,16 +48,16 @@ Localizer::Localizer(const LocalizerParam & param) : param_(param)
   std::cout << "intrinsic_ = \n" << intrinsic_ << std::endl;
 
   /*
-  [[ 0,  0, -1,  0 ],
-  [ -1,  0,  0,  0 ],
-  [  0, +1,  0,  0 ],
+  [[+1,  0,  0,  0 ],
+  [  0, -1,  0,  0 ],
+  [  0,  0, -1,  0 ],
   [  0,  0,  0, +1 ]]
 */
   axis_convert_mat_ = torch::zeros({4, 4});
-  axis_convert_mat_[0][2] = -1;
-  axis_convert_mat_[1][0] = -1;
-  axis_convert_mat_[2][1] = 1;
-  axis_convert_mat_[3][3] = 1;
+  axis_convert_mat_[0][0] = +1;
+  axis_convert_mat_[1][1] = -1;
+  axis_convert_mat_[2][2] = -1;
+  axis_convert_mat_[3][3] = +1;
   axis_convert_mat_ = axis_convert_mat_.to(torch::kCUDA);
 }
 
