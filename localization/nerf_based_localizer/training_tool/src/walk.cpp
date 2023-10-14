@@ -46,7 +46,7 @@ torch::Tensor calc_rotation_tensor(float degree, Eigen::Vector3f axis)
 void render(Localizer & localizer, torch::Tensor pose)
 {
   std::cout << "pose:\n" << pose << std::endl;
-  torch::Tensor pose_camera = localizer.world2camera(pose);
+  torch::Tensor pose_camera = localizer.camera2nerf(pose);
   torch::Tensor image = localizer.render_image(pose_camera);
   utils::write_image_tensor("image.png", image);
   std::cout << "Move by WASD, E:Up, Q:Down, J:YAW+, K:PITCH+, L:YAW-, I:PITCH-, O:ROll+, U:ROll-"

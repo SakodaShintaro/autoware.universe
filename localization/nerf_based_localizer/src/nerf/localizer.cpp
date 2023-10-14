@@ -315,7 +315,7 @@ Tensor Localizer::calc_average_pose(const std::vector<Particle> & particles)
   return avg_pose;
 }
 
-torch::Tensor Localizer::world2camera(const torch::Tensor & pose_in_world)
+torch::Tensor Localizer::camera2nerf(const torch::Tensor & pose_in_world)
 {
   torch::Tensor x = pose_in_world;
   x = torch::mm(x, axis_convert_mat_);
@@ -330,7 +330,7 @@ torch::Tensor Localizer::world2camera(const torch::Tensor & pose_in_world)
   return x;
 }
 
-torch::Tensor Localizer::camera2world(const torch::Tensor & pose_in_camera)
+torch::Tensor Localizer::nerf2camera(const torch::Tensor & pose_in_camera)
 {
   torch::Tensor x = pose_in_camera;
   x = torch::cat({x, torch::tensor({0, 0, 0, 1}).view({1, 4}).to(torch::kCUDA)});

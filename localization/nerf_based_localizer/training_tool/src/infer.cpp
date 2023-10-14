@@ -53,7 +53,7 @@ void infer(const std::string & train_result_dir, const std::string & dataset_dir
     ofs << std::fixed;
     ofs << "name\tx\ty\tz\tscore" << std::endl;
     auto output = [&](const std::string & name, const torch::Tensor & pose, float score) {
-      const torch::Tensor out = core.camera2world(pose);
+      const torch::Tensor out = core.nerf2camera(pose);
       ofs << name << "\t";
       ofs << out[0][3].item<float>() << "\t";
       ofs << out[1][3].item<float>() << "\t";

@@ -47,7 +47,6 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   tf_listener_(tf_buffer_),
   tf2_broadcaster_(*this),
   map_frame_("map"),
-  target_frame_(this->declare_parameter<std::string>("target_frame")),
   particle_num_(this->declare_parameter<int>("particle_num")),
   output_covariance_(this->declare_parameter<double>("output_covariance")),
   base_score_(this->declare_parameter<double>("base_score")),
@@ -282,7 +281,7 @@ NerfBasedLocalizer::localize(
   initial_pose = initial_pose.to(torch::kFloat32);
   RCLCPP_INFO_STREAM(this->get_logger(), "world_before:\n" << initial_pose);
 
-  initial_pose = localizer_core_.world2camera(initial_pose);
+  initial_pose = localizer_core_.camera2nerf(initial_pose);
 
   // run NeRF
   torch::Tensor optimized_pose;
@@ -300,20 +299,19 @@ NerfBasedLocalizer::localize(
   }
 
   torch::Tensor nerf_image = localizer_core_.render_image(optimized_pose);
-  float score = utils::calc_loss(nerf_image, image_tensor);
+  const float score = utils::calc_loss(nerf_image, image_tensor);
 
   RCLCPP_INFO_STREAM(this->get_logger(), "score = " << score);
   previous_score_ = score;
 
-  // Convert pose to base_link
-  optimized_pose = localizer_core_.camera2world(optimized_pose);
+  optimized_pose = localizer_core_.nerf2camera(optimized_pose);
 
   RCLCPP_INFO_STREAM(this->get_logger(), "world_after:\n" << optimized_pose);
 
-  geometry_msgs::msg::Pose result_pose_lidar;
-  result_pose_lidar.position.x = optimized_pose[0][3].item<float>();
-  result_pose_lidar.position.y = optimized_pose[1][3].item<float>();
-  result_pose_lidar.position.z = optimized_pose[2][3].item<float>();
+  geometry_msgs::msg::Pose result_pose_camera;
+  result_pose_camera.position.x = optimized_pose[0][3].item<float>();
+  result_pose_camera.position.y = optimized_pose[1][3].item<float>();
+  result_pose_camera.position.z = optimized_pose[2][3].item<float>();
   Eigen::Matrix3f rot_out;
   rot_out << optimized_pose[0][0].item<float>(), optimized_pose[0][1].item<float>(),
     optimized_pose[0][2].item<float>(), optimized_pose[1][0].item<float>(),
@@ -321,16 +319,16 @@ NerfBasedLocalizer::localize(
     optimized_pose[2][0].item<float>(), optimized_pose[2][1].item<float>(),
     optimized_pose[2][2].item<float>();
   Eigen::Quaternionf quat_out(rot_out);
-  result_pose_lidar.orientation.x = quat_out.x();
-  result_pose_lidar.orientation.y = quat_out.y();
-  result_pose_lidar.orientation.z = quat_out.z();
-  result_pose_lidar.orientation.w = quat_out.w();
+  result_pose_camera.orientation.x = quat_out.x();
+  result_pose_camera.orientation.y = quat_out.y();
+  result_pose_camera.orientation.z = quat_out.z();
+  result_pose_camera.orientation.w = quat_out.w();
 
   geometry_msgs::msg::Pose result_pose_base_link;
   try {
     geometry_msgs::msg::TransformStamped transform =
       tf_buffer_.lookupTransform(target_frame_, "base_link", tf2::TimePointZero);
-    result_pose_base_link = transform_pose(result_pose_lidar, transform);
+    result_pose_base_link = transform_pose(result_pose_camera, transform);
   } catch (tf2::TransformException & ex) {
     RCLCPP_WARN(this->get_logger(), "%s", ex.what());
   }

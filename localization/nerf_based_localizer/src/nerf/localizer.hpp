@@ -39,8 +39,8 @@ public:
   std::vector<Tensor> optimize_pose_by_differential(
     Tensor initial_pose, Tensor image_tensor, int64_t iteration_num);
 
-  torch::Tensor world2camera(const torch::Tensor & pose_in_world);
-  torch::Tensor camera2world(const torch::Tensor & pose_in_camera);
+  torch::Tensor camera2nerf(const torch::Tensor & pose_in_world);
+  torch::Tensor nerf2camera(const torch::Tensor & pose_in_camera);
 
   static Tensor calc_average_pose(const std::vector<Particle> & particles);
 
