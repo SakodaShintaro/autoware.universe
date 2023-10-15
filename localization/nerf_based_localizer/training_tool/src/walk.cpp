@@ -7,6 +7,9 @@
 #include <termios.h>
 #include <unistd.h>
 
+// Disable checking because of too many give errors
+// cspell:disable
+
 int kbhit(void)
 {
   struct termios oldt, newt;
