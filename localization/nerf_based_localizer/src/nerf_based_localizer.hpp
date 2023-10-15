@@ -66,8 +66,6 @@ private:
   tf2_ros::TransformListener tf_listener_;
   tf2_ros::TransformBroadcaster tf2_broadcaster_;
 
-  float previous_score_;
-
   // Service
   rclcpp::Service<tier4_localization_msgs::srv::PoseWithCovarianceStamped>::SharedPtr service_;
   rclcpp::Service<std_srvs::srv::SetBool>::SharedPtr service_trigger_node_;
@@ -76,7 +74,6 @@ private:
   std::string target_frame_;
   const int particle_num_;
   const double output_covariance_;
-  const float base_score_;
 
   // data deque
   std::deque<geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr>

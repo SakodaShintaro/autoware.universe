@@ -49,7 +49,6 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   map_frame_("map"),
   particle_num_(this->declare_parameter<int>("particle_num")),
   output_covariance_(this->declare_parameter<double>("output_covariance")),
-  base_score_(this->declare_parameter<double>("base_score")),
   is_activated_(true),
   optimization_mode_(this->declare_parameter<int>("optimization_mode"))
 {
@@ -82,8 +81,6 @@ NerfBasedLocalizer::NerfBasedLocalizer(
       "~/output/pose_with_covariance", 10);
   nerf_score_publisher_ = this->create_publisher<std_msgs::msg::Float32>("~/output/score", 10);
   nerf_image_publisher_ = this->create_publisher<sensor_msgs::msg::Image>("~/output/image", 10);
-
-  previous_score_ = base_score_;
 
   service_ = this->create_service<tier4_localization_msgs::srv::PoseWithCovarianceStamped>(
     "~/service/optimize_pose",
@@ -280,7 +277,7 @@ NerfBasedLocalizer::localize(
   std::vector<Particle> particles;
 
   if (optimization_mode_ == 0) {
-    const float noise_coeff = (base_score_ > 0 ? base_score_ / previous_score_ : 1.0f);
+    const float noise_coeff = 1.0f;
     particles = localizer_core_.optimize_pose_by_random_search(
       initial_pose, image_tensor, particle_num_, noise_coeff);
     optimized_pose = Localizer::calc_average_pose(particles);
@@ -294,7 +291,6 @@ NerfBasedLocalizer::localize(
   const float score = utils::calc_loss(nerf_image, image_tensor);
 
   RCLCPP_INFO_STREAM(this->get_logger(), "score = " << score);
-  previous_score_ = score;
 
   optimized_pose = localizer_core_.nerf2camera(optimized_pose);
 
