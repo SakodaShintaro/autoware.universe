@@ -218,8 +218,6 @@ NerfBasedLocalizer::localize(
   // Accessing image properties
   const uint32_t width = image_msg.width;
   const uint32_t height = image_msg.height;
-  const uint32_t step = image_msg.step;
-  const std::string encoding = image_msg.encoding;
 
   RCLCPP_DEBUG_STREAM(
     this->get_logger(), "Image received. width: " << width << ", height: " << height);
