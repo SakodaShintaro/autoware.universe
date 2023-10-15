@@ -7,8 +7,6 @@ ament_auto_find_build_dependencies()
 find_package(CUDA REQUIRED)
 find_package(CUDAToolkit REQUIRED)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -w")
-
 if(NOT ${CUDA_FOUND})
   message(WARNING "cuda is not found, so the nerf_based_localizer package won't be built.")
   return()
