@@ -2,8 +2,8 @@
 // Created by ppwang on 2022/10/5.
 //
 
-#ifndef SANR_CUSTOMOPS_H
-#define SANR_CUSTOMOPS_H
+#ifndef NERF_BASED_LOCALIZER__CUSTOM_OPS_HPP_
+#define NERF_BASED_LOCALIZER__CUSTOM_OPS_HPP_
 
 #include <torch/torch.h>
 
@@ -27,4 +27,4 @@ torch::Tensor WeightVar(torch::Tensor weights, torch::Tensor idx_start_end);
 
 }
 
-#endif  // SANR_CUSTOMOPS_H
+#endif  // NERF_BASED_LOCALIZER__CUSTOM_OPS_HPP_

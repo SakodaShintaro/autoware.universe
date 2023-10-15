@@ -2,10 +2,8 @@
 // Created by ppwang on 2023/2/11.
 //
 
-#ifndef SANR_FLEXOPS_H
-#define SANR_FLEXOPS_H
-
-#endif  // SANR_FLEXOPS_H
+#ifndef NERF_BASED_LOCALIZER__FLEX_OPS_HPP_
+#define NERF_BASED_LOCALIZER__FLEX_OPS_HPP_
 
 #include "../common.hpp"
 
@@ -18,3 +16,5 @@ torch::Tensor Sum(torch::Tensor val, torch::Tensor idx_start_end);
 torch::Tensor AccumulateSum(torch::Tensor val, torch::Tensor idx_start_end, bool include_this);
 
 }  // namespace FlexOps
+
+#endif  // NERF_BASED_LOCALIZER__FLEX_OPS_HPP_

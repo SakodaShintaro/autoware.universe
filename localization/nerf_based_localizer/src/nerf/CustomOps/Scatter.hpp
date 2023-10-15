@@ -2,8 +2,8 @@
 // Created by ppwang on 2023/3/27.
 //
 
-#ifndef SANR_SCATTER_H
-#define SANR_SCATTER_H
+#ifndef NERF_BASED_LOCALIZER__SCATTER_HPP_
+#define NERF_BASED_LOCALIZER__SCATTER_HPP_
 
 #include "../common.hpp"
 
@@ -20,4 +20,4 @@ torch::Tensor ScatterAdd(torch::Tensor emb, torch::Tensor idx, torch::Tensor to_
 torch::Tensor ScatterIdx(int n_all_pts, torch::Tensor idx_start_end, torch::Tensor emb_idx);
 }  // namespace CustomOps
 
-#endif  // SANR_SCATTER_H
+#endif  // NERF_BASED_LOCALIZER__SCATTER_HPP_
