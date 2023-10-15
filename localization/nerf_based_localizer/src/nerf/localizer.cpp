@@ -137,13 +137,13 @@ torch::Tensor gram_schmidt(torch::Tensor A)
 }
 
 std::vector<Tensor> Localizer::optimize_pose_by_differential(
-  Tensor initial_pose, Tensor image_tensor, int64_t iteration_num)
+  Tensor initial_pose, Tensor image_tensor, int64_t iteration_num, float learning_rate)
 {
   Tensor prev = initial_pose.detach().clone();
   std::vector<Tensor> results;
   initial_pose = initial_pose.requires_grad_(true);
   image_tensor = image_tensor.view({infer_height_, infer_width_, 3});
-  torch::optim::Adam optimizer({initial_pose}, 1 * 1e-4);
+  torch::optim::Adam optimizer({initial_pose}, learning_rate);
   for (int64_t i = 0; i < iteration_num; i++) {
     Tensor pred_img = render_image(initial_pose);
     Tensor loss = torch::nn::functional::mse_loss(pred_img, image_tensor);

@@ -49,6 +49,8 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   map_frame_("map"),
   particle_num_(this->declare_parameter<int>("particle_num")),
   output_covariance_(this->declare_parameter<double>("output_covariance")),
+  iteration_num_(this->declare_parameter<int>("iteration_num")),
+  learning_rate_(this->declare_parameter<float>("learning_rate")),
   is_activated_(true),
   optimization_mode_(this->declare_parameter<int>("optimization_mode"))
 {
@@ -277,8 +279,8 @@ NerfBasedLocalizer::localize(
       initial_pose, image_tensor, particle_num_, noise_coeff);
     optimized_pose = Localizer::calc_average_pose(particles);
   } else {
-    std::vector<torch::Tensor> optimized_poses =
-      localizer_.optimize_pose_by_differential(initial_pose, image_tensor, 1);
+    std::vector<torch::Tensor> optimized_poses = localizer_.optimize_pose_by_differential(
+      initial_pose, image_tensor, iteration_num_, learning_rate_);
     optimized_pose = optimized_poses.back();
   }
 

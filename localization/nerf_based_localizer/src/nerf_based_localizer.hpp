@@ -71,6 +71,8 @@ private:
   std::string target_frame_;
   const int particle_num_;
   const double output_covariance_;
+  const int iteration_num_;
+  const float learning_rate_;
 
   // data deque
   std::deque<geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr>

@@ -37,7 +37,7 @@ public:
   std::vector<Particle> optimize_pose_by_random_search(
     Tensor initial_pose, Tensor image_tensor, int64_t particle_num, float noise_coeff);
   std::vector<Tensor> optimize_pose_by_differential(
-    Tensor initial_pose, Tensor image_tensor, int64_t iteration_num);
+    Tensor initial_pose, Tensor image_tensor, int64_t iteration_num, float learning_rate);
 
   torch::Tensor camera2nerf(const torch::Tensor & pose_in_world);
   torch::Tensor nerf2camera(const torch::Tensor & pose_in_camera);
