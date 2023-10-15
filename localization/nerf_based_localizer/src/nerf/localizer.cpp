@@ -41,11 +41,8 @@ Localizer::Localizer(const LocalizerParam & param) : param_(param)
   // set
   infer_height_ = train_height / param.resize_factor;
   infer_width_ = train_width / param.resize_factor;
-  std::cout << "infer_height_ = " << infer_height_ << ", infer_width_ = " << infer_width_
-            << ", factor = " << param.resize_factor << std::endl;
   intrinsic_ /= param.resize_factor;
   intrinsic_[2][2] = 1.0;
-  std::cout << "intrinsic_ = \n" << intrinsic_ << std::endl;
 
   /*
   [[+1,  0,  0,  0 ],
