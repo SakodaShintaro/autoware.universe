@@ -103,8 +103,6 @@ NerfBasedLocalizer::NerfBasedLocalizer(
 void NerfBasedLocalizer::callback_initial_pose(
   const geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr initial_pose_msg_ptr)
 {
-  // lock mutex for initial pose
-  std::lock_guard<std::mutex> initial_pose_array_lock(initial_pose_array_mtx_);
   // if rosbag restart, clear buffer
   if (!initial_pose_msg_ptr_array_.empty()) {
     const builtin_interfaces::msg::Time & t_front =
@@ -128,8 +126,6 @@ void NerfBasedLocalizer::callback_initial_pose(
 
 void NerfBasedLocalizer::callback_image(const sensor_msgs::msg::Image::ConstSharedPtr image_msg_ptr)
 {
-  // lock mutex for image
-  std::lock_guard<std::mutex> image_array_lock(image_array_mtx_);
   image_msg_ptr_array_.push_back(image_msg_ptr);
   if (image_msg_ptr_array_.size() > 1) {
     image_msg_ptr_array_.pop_front();
@@ -140,8 +136,6 @@ void NerfBasedLocalizer::callback_image(const sensor_msgs::msg::Image::ConstShar
     return;
   }
 
-  // lock mutex for initial pose
-  std::lock_guard<std::mutex> initial_pose_array_lock(initial_pose_array_mtx_);
   if (initial_pose_msg_ptr_array_.empty()) {
     RCLCPP_ERROR(this->get_logger(), "initial_pose_with_covariance is not received.");
     return;
@@ -189,8 +183,6 @@ void NerfBasedLocalizer::service(
 {
   RCLCPP_INFO(this->get_logger(), "start NerfBasedLocalizer::service");
 
-  // lock mutex for image
-  std::lock_guard<std::mutex> image_array_lock(image_array_mtx_);
   if (image_msg_ptr_array_.empty()) {
     RCLCPP_ERROR(this->get_logger(), "image is not received.");
     res->success = false;
@@ -380,9 +372,7 @@ void NerfBasedLocalizer::service_trigger_node(
 
   is_activated_ = req->data;
   if (is_activated_) {
-    std::lock_guard<std::mutex> initial_pose_array_lock(initial_pose_array_mtx_);
     initial_pose_msg_ptr_array_.clear();
-    std::lock_guard<std::mutex> image_array_lock(image_array_mtx_);
     image_msg_ptr_array_.clear();
   }
   res->success = true;

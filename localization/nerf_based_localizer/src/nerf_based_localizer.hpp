@@ -81,9 +81,7 @@ private:
   // data deque
   std::deque<geometry_msgs::msg::PoseWithCovarianceStamped::ConstSharedPtr>
     initial_pose_msg_ptr_array_;
-  std::mutex initial_pose_array_mtx_;
   std::deque<sensor_msgs::msg::Image::ConstSharedPtr> image_msg_ptr_array_;
-  std::mutex image_array_mtx_;
 
   bool is_activated_;
 
