@@ -62,7 +62,7 @@ NerfBasedLocalizer::NerfBasedLocalizer(
   param.noise_rotation_y = this->declare_parameter<float>("noise_rotation_y");
   param.noise_rotation_z = this->declare_parameter<float>("noise_rotation_z");
   param.resize_factor = this->declare_parameter<int>("resize_factor");
-  localizer_core_ = Localizer(param);
+  localizer_ = Localizer(param);
 
   initial_pose_with_covariance_subscriber_ =
     this->create_subscription<geometry_msgs::msg::PoseWithCovarianceStamped>(
@@ -229,8 +229,8 @@ NerfBasedLocalizer::localize(
   image_tensor = image_tensor.to(torch::kFloat32);
   image_tensor /= 255.0;
   image_tensor = image_tensor.flip(2);  // BGR to RGB
-  image_tensor = utils::resize_image(
-    image_tensor, localizer_core_.infer_height(), localizer_core_.infer_width());
+  image_tensor =
+    utils::resize_image(image_tensor, localizer_.infer_height(), localizer_.infer_width());
   image_tensor = image_tensor.to(torch::kCUDA);
 
   geometry_msgs::msg::PoseWithCovarianceStamped pose_camera;
@@ -265,7 +265,7 @@ NerfBasedLocalizer::localize(
   initial_pose = initial_pose.to(torch::kFloat32);
   RCLCPP_DEBUG_STREAM(this->get_logger(), "pose_before:\n" << initial_pose);
 
-  initial_pose = localizer_core_.camera2nerf(initial_pose);
+  initial_pose = localizer_.camera2nerf(initial_pose);
 
   // run NeRF
   torch::Tensor optimized_pose;
@@ -273,21 +273,21 @@ NerfBasedLocalizer::localize(
 
   if (optimization_mode_ == 0) {
     const float noise_coeff = 1.0f;
-    particles = localizer_core_.optimize_pose_by_random_search(
+    particles = localizer_.optimize_pose_by_random_search(
       initial_pose, image_tensor, particle_num_, noise_coeff);
     optimized_pose = Localizer::calc_average_pose(particles);
   } else {
     std::vector<torch::Tensor> optimized_poses =
-      localizer_core_.optimize_pose_by_differential(initial_pose, image_tensor, 1);
+      localizer_.optimize_pose_by_differential(initial_pose, image_tensor, 1);
     optimized_pose = optimized_poses.back();
   }
 
-  torch::Tensor nerf_image = localizer_core_.render_image(optimized_pose);
+  torch::Tensor nerf_image = localizer_.render_image(optimized_pose);
   const float score = utils::calc_loss(nerf_image, image_tensor);
 
   RCLCPP_DEBUG_STREAM(this->get_logger(), "score = " << score);
 
-  optimized_pose = localizer_core_.nerf2camera(optimized_pose);
+  optimized_pose = localizer_.nerf2camera(optimized_pose);
 
   RCLCPP_DEBUG_STREAM(this->get_logger(), "pose_after:\n" << optimized_pose);
 
