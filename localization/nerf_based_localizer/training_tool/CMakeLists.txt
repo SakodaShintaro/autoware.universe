@@ -3,8 +3,6 @@ project(nerf_training_tool
     VERSION 0.1
     LANGUAGES CUDA CXX)
 
-add_compile_options(-w)
-
 include(CheckLanguage)
 check_language(CUDA)
 
