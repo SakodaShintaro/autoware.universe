@@ -1,6 +1,8 @@
 #ifndef NERF_BASED_LOCALIZER__NERF_BASED_LOCALIZER_HPP_
 #define NERF_BASED_LOCALIZER__NERF_BASED_LOCALIZER_HPP_
 
+#include "nerf/localizer.hpp"
+
 #include <rclcpp/rclcpp.hpp>
 
 #include <geometry_msgs/msg/pose_stamped.hpp>
@@ -16,11 +18,6 @@
 #include <tf2_ros/transform_listener.h>
 
 #include <deque>
-
-// If you include this first, you will get an error.
-// clang-format off
-#include "nerf/localizer.hpp"
-// clang-format on
 
 class NerfBasedLocalizer : public rclcpp::Node
 {
