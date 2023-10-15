@@ -13,7 +13,7 @@
   <arg name="output_score" default="~/output/score"/>
   <arg name="output_image" default="~/output/image"/>
 
-  <node pkg="nerf_based_localizer" exec="nerf_based_localizer" name="$(var node_name)" output="log">
+  <node pkg="nerf_based_localizer" exec="nerf_based_localizer" name="$(var node_name)" output="log" args="--ros-args --log-level INFO">
     <remap from="~/input/pose" to="$(var input_pose)"/>
     <remap from="~/input/image" to="$(var input_image)"/>
     <remap from="~/service/optimize_pose" to="$(var service_optimize_pose)"/>

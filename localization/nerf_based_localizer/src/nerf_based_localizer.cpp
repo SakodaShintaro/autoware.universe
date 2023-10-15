@@ -94,7 +94,7 @@ NerfBasedLocalizer::NerfBasedLocalizer(
       std::placeholders::_2),
     rclcpp::ServicesQoS().get_rmw_qos_profile());
 
-  RCLCPP_INFO(this->get_logger(), "nerf_based_localizer is created.");
+  RCLCPP_DEBUG(this->get_logger(), "nerf_based_localizer is created.");
 }
 
 void NerfBasedLocalizer::callback_initial_pose(
@@ -178,7 +178,7 @@ void NerfBasedLocalizer::service(
   const tier4_localization_msgs::srv::PoseWithCovarianceStamped::Request::SharedPtr req,
   tier4_localization_msgs::srv::PoseWithCovarianceStamped::Response::SharedPtr res)
 {
-  RCLCPP_INFO(this->get_logger(), "start NerfBasedLocalizer::service");
+  RCLCPP_DEBUG(this->get_logger(), "start NerfBasedLocalizer::service");
 
   if (image_msg_ptr_array_.empty()) {
     RCLCPP_ERROR(this->get_logger(), "image is not received.");
@@ -199,7 +199,7 @@ void NerfBasedLocalizer::service(
   res->pose_with_covariance.pose.pose = pose_msg;
   res->pose_with_covariance.pose.covariance = req->pose_with_covariance.pose.covariance;
 
-  RCLCPP_INFO(this->get_logger(), "finish NerfBasedLocalizer::service");
+  RCLCPP_DEBUG(this->get_logger(), "finish NerfBasedLocalizer::service");
 }
 
 std::tuple<geometry_msgs::msg::Pose, sensor_msgs::msg::Image, std_msgs::msg::Float32>
@@ -219,13 +219,8 @@ NerfBasedLocalizer::localize(
   const uint32_t step = image_msg.step;
   const std::string encoding = image_msg.encoding;
 
-  // output information about image
-  RCLCPP_INFO_STREAM(
-    this->get_logger(),
-    "Image received. width: " << width << ", height: " << height << ", step: " << step);
-  RCLCPP_INFO_STREAM(
-    this->get_logger(), "pos_before\t" << pose_msg.position.x << "\t" << pose_msg.position.y << "\t"
-                                       << pose_msg.position.z);
+  RCLCPP_DEBUG_STREAM(
+    this->get_logger(), "Image received. width: " << width << ", height: " << height);
 
   // Accessing image data
   torch::Tensor image_tensor = torch::tensor(image_msg.data);
@@ -268,7 +263,7 @@ NerfBasedLocalizer::localize(
   initial_pose[2][3] = pose.position.z;
   initial_pose = initial_pose.to(torch::kCUDA);
   initial_pose = initial_pose.to(torch::kFloat32);
-  RCLCPP_INFO_STREAM(this->get_logger(), "world_before:\n" << initial_pose);
+  RCLCPP_DEBUG_STREAM(this->get_logger(), "pose_before:\n" << initial_pose);
 
   initial_pose = localizer_core_.camera2nerf(initial_pose);
 
@@ -290,11 +285,11 @@ NerfBasedLocalizer::localize(
   torch::Tensor nerf_image = localizer_core_.render_image(optimized_pose);
   const float score = utils::calc_loss(nerf_image, image_tensor);
 
-  RCLCPP_INFO_STREAM(this->get_logger(), "score = " << score);
+  RCLCPP_DEBUG_STREAM(this->get_logger(), "score = " << score);
 
   optimized_pose = localizer_core_.nerf2camera(optimized_pose);
 
-  RCLCPP_INFO_STREAM(this->get_logger(), "world_after:\n" << optimized_pose);
+  RCLCPP_DEBUG_STREAM(this->get_logger(), "pose_after:\n" << optimized_pose);
 
   geometry_msgs::msg::Pose result_pose_camera;
   result_pose_camera.position.x = optimized_pose[0][3].item<float>();
@@ -349,12 +344,7 @@ NerfBasedLocalizer::localize(
   transform.child_frame_id = "nerf_base_link";
   tf2_broadcaster_.sendTransform(transform);
 
-  RCLCPP_INFO_STREAM(
-    this->get_logger(), "pos_after\t" << result_pose_base_link.position.x << "\t"
-                                      << result_pose_base_link.position.y << "\t"
-                                      << result_pose_base_link.position.z);
-
-  RCLCPP_INFO_STREAM(get_logger(), "localize time: " << timer.elapsed_milli_seconds());
+  RCLCPP_DEBUG_STREAM(get_logger(), "localize time: " << timer.elapsed_milli_seconds());
 
   return std::make_tuple(result_pose_base_link, nerf_image_msg, score_msg);
 }
@@ -363,7 +353,7 @@ void NerfBasedLocalizer::service_trigger_node(
   const std_srvs::srv::SetBool::Request::SharedPtr req,
   std_srvs::srv::SetBool::Response::SharedPtr res)
 {
-  RCLCPP_INFO_STREAM(
+  RCLCPP_DEBUG_STREAM(
     this->get_logger(), "service_trigger " << req->data << " is arrived to NerfBasedLocalizer.");
 
   is_activated_ = req->data;
