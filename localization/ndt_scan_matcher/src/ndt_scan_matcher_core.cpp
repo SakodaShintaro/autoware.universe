@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// change to test tj-actions/changed-files
-
 #include "ndt_scan_matcher/ndt_scan_matcher_core.hpp"
 
 #include "localization_util/matrix_type.hpp"
