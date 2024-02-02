@@ -701,7 +701,7 @@ int NDTScanMatcher::count_oscillation(
 }
 
 std::array<double, 36> NDTScanMatcher::rotate_covariance(
-  const std::array<double, 36> & src_covariance, const Eigen::Matrix3d & rotation) const
+  const std::array<double, 36> & src_covariance, const Eigen::Matrix3d & rotation)
 {
   std::array<double, 36> ret_covariance = src_covariance;
 
