@@ -9,7 +9,6 @@ units:
           - { type: link, link: /autoware/localization/topic_rate_check/transform }
           - { type: link, link: /autoware/localization/topic_rate_check/pose_twist_fusion }
           - { type: link, link: /autoware/localization/scan_matching_status }
-          - { type: link, link: /autoware/localization/accuracy }
           - { type: link, link: /autoware/localization/sensor_fusion_status }
 
   - path: /autoware/localization/state
@@ -31,11 +30,6 @@ units:
     type: diag
     node: ndt_scan_matcher
     name: scan_matching_status
-
-  - path: /autoware/localization/accuracy
-    type: diag
-    node: localization
-    name: localization_error_monitor
 
   - path: /autoware/localization/sensor_fusion_status
     type: diag
