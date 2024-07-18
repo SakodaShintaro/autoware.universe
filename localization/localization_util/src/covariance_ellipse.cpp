@@ -38,6 +38,8 @@ Ellipse calculate_xy_ellipse(
   Eigen::SelfAdjointEigenSolver<Eigen::Matrix2d> eigensolver(xy_covariance);
 
   Ellipse ellipse;
+  ellipse.P = xy_covariance;
+  const Eigen::Matrix2d & p_inv = ellipse.P.inverse();
 
   // eigen values and vectors are sorted in ascending order
   ellipse.long_radius = scale * std::sqrt(eigensolver.eigenvalues()(1));
@@ -47,15 +49,23 @@ Ellipse calculate_xy_ellipse(
   const Eigen::Vector2d pc_vector = eigensolver.eigenvectors().col(1);
   ellipse.yaw = std::atan2(pc_vector.y(), pc_vector.x());
 
-  // ellipse size along lateral direction (body-frame)
-  ellipse.P = xy_covariance;
   const double yaw_vehicle = tf2::getYaw(pose_with_covariance.pose.orientation);
-  const Eigen::Matrix2d & p_inv = ellipse.P.inverse();
-  Eigen::MatrixXd e(2, 1);
-  e(0, 0) = std::cos(yaw_vehicle);
-  e(1, 0) = std::sin(yaw_vehicle);
-  const double d = std::sqrt((e.transpose() * p_inv * e)(0, 0) / p_inv.determinant());
-  ellipse.size_lateral_direction = scale * d;
+
+  // ellipse size along lateral direction (body-frame)
+  Eigen::MatrixXd rot_to_lat(2, 1);
+  rot_to_lat(0, 0) = std::cos(yaw_vehicle);
+  rot_to_lat(1, 0) = std::sin(yaw_vehicle);
+  const double d_lat =
+    std::sqrt((rot_to_lat.transpose() * p_inv * rot_to_lat)(0, 0) / p_inv.determinant());
+  ellipse.size_lateral_direction = scale * d_lat;
+
+  // ellipse size along longitudinal direction (body-frame)
+  Eigen::MatrixXd rot_to_lon(2, 1);
+  rot_to_lon(0, 0) = std::cos(yaw_vehicle + M_PI_2);
+  rot_to_lon(1, 0) = std::sin(yaw_vehicle + M_PI_2);
+  const double d_lon =
+    std::sqrt((rot_to_lon.transpose() * p_inv * rot_to_lon)(0, 0) / p_inv.determinant());
+  ellipse.size_longitudinal_direction = scale * d_lon;
 
   return ellipse;
 }

@@ -14,6 +14,7 @@
 
 #include "ndt_scan_matcher/ndt_scan_matcher_core.hpp"
 
+#include "localization_util/covariance_ellipse.hpp"
 #include "localization_util/matrix_type.hpp"
 #include "localization_util/tree_structured_parzen_estimator.hpp"
 #include "localization_util/util_func.hpp"
@@ -470,7 +471,7 @@ bool NDTScanMatcher::callback_sensor_points_main(
   ndt_ptr_->align(*output_cloud, initial_pose_matrix);
   const pclomp::NdtResult ndt_result = ndt_ptr_->getResult();
 
-  const geometry_msgs::msg::Pose result_pose_msg = matrix4f_to_pose(ndt_result.pose);
+  geometry_msgs::msg::Pose result_pose_msg = matrix4f_to_pose(ndt_result.pose);
   std::vector<geometry_msgs::msg::Pose> transformation_msg_array;
   for (const auto & pose_matrix : ndt_result.transformation_array) {
     geometry_msgs::msg::Pose pose_ros = matrix4f_to_pose(pose_matrix);
@@ -591,6 +592,36 @@ bool NDTScanMatcher::callback_sensor_points_main(
     ndt_covariance[1 + 6 * 0] = estimated_covariance_2d_adj(1, 0);
     ndt_covariance[0 + 6 * 1] = estimated_covariance_2d_adj(0, 1);
   }
+
+  geometry_msgs::msg::PoseWithCovariance result_pose_with_cov_msg;
+  result_pose_with_cov_msg.pose = result_pose_msg;
+  result_pose_with_cov_msg.covariance = ndt_covariance;
+  const autoware::localization_util::Ellipse covariance_ellipse =
+    autoware::localization_util::calculate_xy_ellipse(result_pose_with_cov_msg, 3.0);
+  const bool is_tunnel =
+    (covariance_ellipse.size_lateral_direction <= 0.15 * 3.0 &&
+     covariance_ellipse.size_longitudinal_direction >= 0.5 * 3.0);
+  diagnostics_scan_points_->add_key_value(
+    "size_lateral_direction", covariance_ellipse.size_lateral_direction);
+  diagnostics_scan_points_->add_key_value(
+    "size_longitudinal_direction", covariance_ellipse.size_longitudinal_direction);
+  diagnostics_scan_points_->add_key_value("is_tunnel", is_tunnel);
+
+  // add bias noise
+  if (is_tunnel) {
+    const double noise_width = 0.2;
+    const double yaw_vehicle = tf2::getYaw(result_pose_msg.orientation);
+    Eigen::Matrix2d rotation;
+    rotation << std::cos(yaw_vehicle), -std::sin(yaw_vehicle),  // row
+      std::sin(yaw_vehicle), std::cos(yaw_vehicle);
+    Eigen::MatrixXd noise_vec(2, 1);
+    noise_vec << noise_width, 0.0;
+    Eigen::MatrixXd noise_vec_rotated = rotation * noise_vec;
+    result_pose_msg.position.x += noise_vec_rotated(0, 0);
+    result_pose_msg.position.y += noise_vec_rotated(1, 0);
+  }
+
+  // ndt_covariance = param_.covariance.output_pose_covariance;
 
   // check distance_initial_to_result
   const auto distance_initial_to_result = static_cast<double>(

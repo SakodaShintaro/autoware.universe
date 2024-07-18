@@ -30,6 +30,7 @@ struct Ellipse
   double yaw;
   Eigen::Matrix2d P;
   double size_lateral_direction;
+  double size_longitudinal_direction;
 };
 
 Ellipse calculate_xy_ellipse(
