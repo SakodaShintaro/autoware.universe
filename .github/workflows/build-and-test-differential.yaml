@@ -90,6 +90,31 @@ jobs:
       - name: Show disk space before the tasks
         run: df -h
 
+      - name: Get PR description
+        id: get-pr-body
+        run: echo "${{ github.event.pull_request.body }}" > pr_body.txt
+
+      - name: Extract before and after sections
+        id: extract-sections
+        run: |
+          # Extract the sections for before and after
+          sed -n '/\[BEFORE\]/,/^\[AFTER\]/p' pr_body.txt | sed '$d' > before.yaml
+          sed -n '/\[AFTER\]/,$p' pr_body.txt | tail -n +2 > after.yaml
+          echo "Before content:"
+          cat before.yaml
+          echo "After content:"
+          cat after.yaml
+
+      - name: Replace entries in build_depends.repos
+        run: |
+          # Search and replace the before content with after content in build_depends.repos
+          before_content=$(yq e '.' before.yaml)
+          after_content=$(yq e '.' after.yaml)
+
+          # Use sed to replace the before content with after content
+          # The placeholder here assumes a single block structure is used for each repository
+          sed -i "s|$before_content|$after_content|g" build_depends.repos
+
       - name: Remove exec_depend
         uses: autowarefoundation/autoware-github-actions/remove-exec-depend@v1
 
