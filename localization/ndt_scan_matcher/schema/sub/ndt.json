@@ -14,7 +14,7 @@
         "step_size": {
           "type": "number",
           "description": "The newton line search maximum step length.",
-          "default": 0.1,
+          "default": 0.05,
           "minimum": 0.0
         },
         "resolution": {
