@@ -110,6 +110,12 @@ def get_downsample_filter_node(setting: dict) -> ComposableNode:
                 "voxel_size_x": voxel_size,
                 "voxel_size_y": voxel_size,
                 "voxel_size_z": voxel_size,
+                "input_frame": "",
+                "output_frame": "",
+                "max_queue_size": 5,
+                "use_indices": False,
+                "latched_indices": False,
+                "approximate_sync": False,
             }
         ],
         extra_arguments=[{"use_intra_process_comms": LaunchConfiguration("use_intra_process")}],

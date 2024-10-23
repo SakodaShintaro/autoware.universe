@@ -19,6 +19,12 @@
         radial_divider_angle_deg: 1.0
         use_recheck_ground_cluster: true
         use_lowest_point: true
+        input_frame: ""
+        output_frame: ""
+        max_queue_size: 5
+        use_indices: false
+        latched_indices: false
+        approximate_sync: false
 
         # debug parameters
         publish_processing_time_detail: false

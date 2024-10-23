@@ -439,6 +439,10 @@ class GroundSegmentationPipeline:
                         "voxel_size_x": 0.04,
                         "voxel_size_y": 0.04,
                         "voxel_size_z": 0.08,
+                        "max_queue_size": 5,
+                        "use_indices": False,
+                        "latched_indices": False,
+                        "approximate_sync": False,
                     }
                 ],
                 extra_arguments=[

@@ -155,6 +155,12 @@
           <param name="voxel_size_x" value="$(var common_downsample_voxel_size_x)"/>
           <param name="voxel_size_y" value="$(var common_downsample_voxel_size_y)"/>
           <param name="voxel_size_z" value="$(var common_downsample_voxel_size_z)"/>
+          <param name="input_frame" value=""/>
+          <param name="output_frame" value=""/>
+          <param name="max_queue_size" value="5"/>
+          <param name="use_indices" value="false"/>
+          <param name="latched_indices" value="false"/>
+          <param name="approximate_sync" value="false"/>
           <extra_arg name="use_intra_process_comms" value="true"/>
         </composable_node>
       </load_composable_node>

@@ -87,6 +87,12 @@ class PointcloudMapFilterPipeline:
                         "voxel_size_x": self.voxel_size,
                         "voxel_size_y": self.voxel_size,
                         "voxel_size_z": self.voxel_size,
+                        "input_frame": "",
+                        "output_frame": "",
+                        "max_queue_size": 5,
+                        "use_indices": False,
+                        "latched_indices": False,
+                        "approximate_sync": False,
                     }
                 ],
                 extra_arguments=[
