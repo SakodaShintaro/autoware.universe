@@ -122,6 +122,19 @@ if(TRT_AVAIL AND CUDA_AVAIL AND CUDNN_AVAIL)
       autoware_test_utils
     )
   endif()
+  if (BUILD_TOOL)
+    add_executable(parse_rosbag_tool
+      tool/parse_rosbag.cpp
+    )
+    target_link_libraries(parse_rosbag_tool
+      autoware_diffusion_planner_component
+      ${NVINFER}
+      ${NVONNXPARSER}
+      ${CUDA_LIBRARIES}
+      ${CUBLAS_LIBRARIES}
+      ${CUDNN_LIBRARY}
+    )
+  endif()
 endif()
 ament_auto_package(
   INSTALL_TO_SHARE
