@@ -439,15 +439,8 @@ private:
     // 1. Create ego state using actual diffusion planner functions
     const double wheel_base = 2.79;  // Same as Python version
 
-    // Use default acceleration if not available
-    AccelWithCovarianceStamped accel_msg = frame_data.acceleration;
-    if (accel_msg.header.stamp.sec == 0) {
-      accel_msg.accel.accel.linear.x = 0.0;
-      accel_msg.accel.accel.linear.y = 0.0;
-    }
-
     autoware::diffusion_planner::EgoState ego_state(
-      frame_data.kinematic_state, accel_msg, wheel_base);
+      frame_data.kinematic_state, frame_data.acceleration, wheel_base);
     std::vector<float> ego_array = ego_state.as_array();
     saveEgoCurrentState(token, ego_array);
 
