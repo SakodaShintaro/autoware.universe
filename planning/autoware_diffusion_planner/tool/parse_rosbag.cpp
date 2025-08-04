@@ -78,6 +78,16 @@ struct ParseRosbagConfig
   bool search_nearest_route = true;
 };
 
+struct MessageCollections
+{
+  std::deque<Odometry> kinematic_msgs;
+  std::deque<AccelWithCovarianceStamped> acceleration_msgs;
+  std::deque<TrackedObjects> tracking_msgs;
+  std::deque<TrafficLightGroupArray> traffic_msgs;
+  std::deque<LaneletRoute> route_msgs;
+  std::deque<TurnIndicatorsReport> turn_indicator_msgs;
+};
+
 struct FrameData
 {
   rclcpp::Time timestamp;
@@ -113,7 +123,9 @@ public:
     initializeLaneletMap();
   }
 
-  bool parseRosbag()
+  void loadLaneletMap() { initializeLaneletMap(); }
+
+  MessageCollections readRosbagMessages()
   {
     std::cout << "Starting rosbag parsing..." << std::endl;
     std::cout << "Rosbag path: " << config_.rosbag_path << std::endl;
@@ -134,7 +146,7 @@ public:
     // First pass: count messages
     std::cout << "Counting messages..." << std::endl;
     while (reader_.has_next()) {
-      auto bag_message = reader_.read_next();
+      rosbag2_storage::SerializedBagMessageSharedPtr bag_message = reader_.read_next();
       topic_counts[bag_message->topic_name]++;
       total_messages++;
 
@@ -145,8 +157,9 @@ public:
 
     // Print statistics
     std::cout << "\nMessage counts per topic:" << std::endl;
-    for (const auto & [topic, count] : topic_counts) {
-      std::cout << "  " << topic << ": " << count << " messages" << std::endl;
+    for (const std::pair<const std::string, int64_t> & topic_count : topic_counts) {
+      std::cout << "  " << topic_count.first << ": " << topic_count.second << " messages"
+                << std::endl;
     }
 
     // Reopen rosbag for processing
@@ -158,30 +171,27 @@ public:
     std::cout << "\nProcessing messages..." << std::endl;
 
     // Storage for collected messages by type (using deque for efficient operations)
-    std::deque<Odometry> kinematic_msgs;
-    std::deque<AccelWithCovarianceStamped> acceleration_msgs;
-    std::deque<TrackedObjects> tracking_msgs;
-    std::deque<TrafficLightGroupArray> traffic_msgs;
-    std::deque<LaneletRoute> route_msgs;
-    std::deque<TurnIndicatorsReport> turn_indicator_msgs;
+    MessageCollections collections;
 
     while (reader_.has_next() && (config_.limit < 0 || processed_messages < config_.limit)) {
-      auto bag_message = reader_.read_next();
+      rosbag2_storage::SerializedBagMessageSharedPtr bag_message = reader_.read_next();
 
       // Deserialize and store messages by type
       if (bag_message->topic_name == "/localization/kinematic_state") {
-        kinematic_msgs.push_back(deserializeMessage<Odometry>(bag_message));
+        collections.kinematic_msgs.push_back(deserializeMessage<Odometry>(bag_message));
       } else if (bag_message->topic_name == "/localization/acceleration") {
-        acceleration_msgs.push_back(deserializeMessage<AccelWithCovarianceStamped>(bag_message));
+        collections.acceleration_msgs.push_back(
+          deserializeMessage<AccelWithCovarianceStamped>(bag_message));
       } else if (bag_message->topic_name == "/perception/object_recognition/tracking/objects") {
-        tracking_msgs.push_back(deserializeMessage<TrackedObjects>(bag_message));
+        collections.tracking_msgs.push_back(deserializeMessage<TrackedObjects>(bag_message));
       } else if (
         bag_message->topic_name == "/perception/traffic_light_recognition/traffic_signals") {
-        traffic_msgs.push_back(deserializeMessage<TrafficLightGroupArray>(bag_message));
+        collections.traffic_msgs.push_back(deserializeMessage<TrafficLightGroupArray>(bag_message));
       } else if (bag_message->topic_name == "/planning/mission_planning/route") {
-        route_msgs.push_back(deserializeMessage<LaneletRoute>(bag_message));
+        collections.route_msgs.push_back(deserializeMessage<LaneletRoute>(bag_message));
       } else if (bag_message->topic_name == "/vehicle/status/turn_indicators_status") {
-        turn_indicator_msgs.push_back(deserializeMessage<TurnIndicatorsReport>(bag_message));
+        collections.turn_indicator_msgs.push_back(
+          deserializeMessage<TurnIndicatorsReport>(bag_message));
       }
 
       processed_messages++;
@@ -194,26 +204,136 @@ public:
 
     reader_.close();
 
-    // Create output directory
-    fs::create_directories(config_.save_dir);
-
     std::cout << "\nCollected messages:" << std::endl;
-    std::cout << "  Kinematic: " << kinematic_msgs.size() << std::endl;
-    std::cout << "  Acceleration: " << acceleration_msgs.size() << std::endl;
-    std::cout << "  Tracking: " << tracking_msgs.size() << std::endl;
-    std::cout << "  Traffic: " << traffic_msgs.size() << std::endl;
-    std::cout << "  Route: " << route_msgs.size() << std::endl;
-    std::cout << "  Turn indicator: " << turn_indicator_msgs.size() << std::endl;
+    std::cout << "  Kinematic: " << collections.kinematic_msgs.size() << std::endl;
+    std::cout << "  Acceleration: " << collections.acceleration_msgs.size() << std::endl;
+    std::cout << "  Tracking: " << collections.tracking_msgs.size() << std::endl;
+    std::cout << "  Traffic: " << collections.traffic_msgs.size() << std::endl;
+    std::cout << "  Route: " << collections.route_msgs.size() << std::endl;
+    std::cout << "  Turn indicator: " << collections.turn_indicator_msgs.size() << std::endl;
 
-    // Process collected messages and create output data
-    processFramesWithTypedMessages(
-      kinematic_msgs, acceleration_msgs, tracking_msgs, traffic_msgs, route_msgs,
-      turn_indicator_msgs);
+    return collections;
+  }
 
-    std::cout << "\nRosbag parsing completed successfully!" << std::endl;
-    std::cout << "Total messages processed: " << processed_messages << std::endl;
+  std::vector<FrameData> createDataList(MessageCollections & collections)
+  {
+    std::vector<FrameData> data_list;
 
-    return true;
+    const size_t n = collections.tracking_msgs.size();
+
+    // Use tracking messages as base timing (like Python version)
+    for (size_t i = 0; i < n; ++i) {
+      const TrackedObjects & tracking = collections.tracking_msgs[i];
+      const rclcpp::Time timestamp = rclcpp::Time(tracking.header.stamp);
+
+      bool ok = true;
+      FrameData frame_data;
+      frame_data.timestamp = timestamp;
+      frame_data.tracked_objects = tracking;
+
+      // Find nearest messages with pop like Python version
+      if (!collections.kinematic_msgs.empty()) {
+        std::optional<Odometry> result =
+          getNearestMessageWithPop(collections.kinematic_msgs, timestamp);
+        if (!result) {
+          std::cout << "Cannot find kinematic_state msg at frame " << i << std::endl;
+          ok = false;
+        } else {
+          frame_data.kinematic_state = *result;
+        }
+      }
+
+      if (ok && !collections.acceleration_msgs.empty()) {
+        std::optional<AccelWithCovarianceStamped> result =
+          getNearestMessageWithPop(collections.acceleration_msgs, timestamp);
+        if (!result) {
+          std::cout << "Cannot find acceleration msg at frame " << i << std::endl;
+          ok = false;
+        } else {
+          frame_data.acceleration = *result;
+        }
+      }
+
+      if (ok && !collections.traffic_msgs.empty()) {
+        std::optional<TrafficLightGroupArray> result =
+          getNearestMessageWithPop(collections.traffic_msgs, timestamp);
+        if (result) {
+          frame_data.traffic_signals = *result;
+        }
+      }
+
+      if (ok && !collections.route_msgs.empty()) {
+        std::optional<LaneletRoute> result =
+          getNearestMessageWithPop(collections.route_msgs, timestamp);
+        if (result) {
+          frame_data.route = *result;
+        }
+      }
+
+      if (ok && !collections.turn_indicator_msgs.empty()) {
+        std::optional<TurnIndicatorsReport> result =
+          getNearestMessageWithPop(collections.turn_indicator_msgs, timestamp);
+        if (result) {
+          frame_data.turn_indicator = *result;
+        }
+      }
+
+      if (!ok) {
+        if (data_list.empty()) {
+          std::cout << "Skip frame " << i << "/" << n << " (at beginning)" << std::endl;
+          continue;
+        } else {
+          std::cout << "Finish at frame " << i << "/" << n << " (missing msg in middle)"
+                    << std::endl;
+          break;
+        }
+      }
+
+      data_list.push_back(frame_data);
+    }
+
+    return data_list;
+  }
+
+  void processDataList(const std::vector<FrameData> & data_list)
+  {
+    std::cout << "\nProcessing data list..." << std::endl;
+
+    const int64_t n = static_cast<int64_t>(data_list.size());
+    // Use dimensions from dimensions.hpp
+    constexpr std::array<int64_t, 3> ego_history_shape =
+      autoware::diffusion_planner::EGO_HISTORY_SHAPE;
+    const int64_t past_time_steps = ego_history_shape[1];                     // Shape is {1, 21, 4}
+    const int64_t future_time_steps = autoware::diffusion_planner::OUTPUT_T;  // 80
+
+    if (n <= past_time_steps + future_time_steps) {
+      std::cout << "Not enough frames for processing. Need at least "
+                << (past_time_steps + future_time_steps) << " frames, got " << n << std::endl;
+      return;
+    }
+
+    int64_t total_frames = (n - past_time_steps - future_time_steps);
+    if (config_.limit > 0) {
+      total_frames = std::min(total_frames, config_.limit);
+    }
+
+    std::cout << "Processing " << total_frames << " frames..." << std::endl;
+
+    for (int64_t i = past_time_steps; i < past_time_steps + total_frames; i += config_.step) {
+      // Generate token (sequence_id + frame_id)
+      std::ostringstream oss;
+      oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << i;
+      std::string token = oss.str();
+
+      // Create NPY files using FrameData from data_list
+      createNPYFiles(token, data_list[i]);
+
+      if (i % 100 == 0) {
+        std::cout << "Processed frame " << i << "/" << total_frames << std::endl;
+      }
+    }
+
+    std::cout << "Data list processing completed!" << std::endl;
   }
 
   template <typename T>
@@ -247,7 +367,7 @@ private:
 
     // Create LaneletConverter instance
     // Use dimensions from dimensions.hpp
-    constexpr auto lanes_shape = autoware::diffusion_planner::LANES_SHAPE;
+    constexpr std::array<int64_t, 4> lanes_shape = autoware::diffusion_planner::LANES_SHAPE;
     const size_t max_num_polyline = lanes_shape[1];  // Shape is {1, 70, 20, 13}
     const size_t max_num_point = lanes_shape[2];
     const double point_break_distance = 100.0;
@@ -255,25 +375,6 @@ private:
       lanelet_map_ptr_, max_num_polyline, max_num_point, point_break_distance);
 
     std::cout << "Lanelet2 map loaded successfully!" << std::endl;
-  }
-
-  void processFramesWithTypedMessages(
-    std::deque<Odometry> & kinematic_msgs,
-    std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
-    std::deque<TrackedObjects> & tracking_msgs, std::deque<TrafficLightGroupArray> & traffic_msgs,
-    std::deque<LaneletRoute> & route_msgs, std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
-  {
-    std::cout << "\nMatching messages to create data list..." << std::endl;
-
-    // First, match all messages to create data_list like Python version
-    std::vector<FrameData> data_list = createDataList(
-      kinematic_msgs, acceleration_msgs, tracking_msgs, traffic_msgs, route_msgs,
-      turn_indicator_msgs);
-
-    std::cout << "Created data list with " << data_list.size() << " frames" << std::endl;
-
-    // Now process the data_list like Python version
-    processDataList(data_list);
   }
 
   template <typename T>
@@ -313,127 +414,6 @@ private:
     return best_msg;
   }
 
-  std::vector<FrameData> createDataList(
-    std::deque<Odometry> & kinematic_msgs,
-    std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
-    std::deque<TrackedObjects> & tracking_msgs, std::deque<TrafficLightGroupArray> & traffic_msgs,
-    std::deque<LaneletRoute> & route_msgs, std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
-  {
-    std::vector<FrameData> data_list;
-
-    // Use references directly - no need to copy
-
-    const size_t n = tracking_msgs.size();
-
-    // Use tracking messages as base timing (like Python version)
-    for (size_t i = 0; i < n; ++i) {
-      const auto & tracking = tracking_msgs[i];
-      const rclcpp::Time timestamp = rclcpp::Time(tracking.header.stamp);
-
-      bool ok = true;
-      FrameData frame_data;
-      frame_data.timestamp = timestamp;
-      frame_data.tracked_objects = tracking;
-
-      // Find nearest messages with pop like Python version
-      if (!kinematic_msgs.empty()) {
-        auto result = getNearestMessageWithPop(kinematic_msgs, timestamp);
-        if (!result) {
-          std::cout << "Cannot find kinematic_state msg at frame " << i << std::endl;
-          ok = false;
-        } else {
-          frame_data.kinematic_state = *result;
-        }
-      }
-
-      if (ok && !acceleration_msgs.empty()) {
-        auto result = getNearestMessageWithPop(acceleration_msgs, timestamp);
-        if (!result) {
-          std::cout << "Cannot find acceleration msg at frame " << i << std::endl;
-          ok = false;
-        } else {
-          frame_data.acceleration = *result;
-        }
-      }
-
-      if (ok && !traffic_msgs.empty()) {
-        auto result = getNearestMessageWithPop(traffic_msgs, timestamp);
-        if (result) {
-          frame_data.traffic_signals = *result;
-        }
-      }
-
-      if (ok && !route_msgs.empty()) {
-        auto result = getNearestMessageWithPop(route_msgs, timestamp);
-        if (result) {
-          frame_data.route = *result;
-        }
-      }
-
-      if (ok && !turn_indicator_msgs.empty()) {
-        auto result = getNearestMessageWithPop(turn_indicator_msgs, timestamp);
-        if (result) {
-          frame_data.turn_indicator = *result;
-        }
-      }
-
-      if (!ok) {
-        if (data_list.empty()) {
-          std::cout << "Skip frame " << i << "/" << n << " (at beginning)" << std::endl;
-          continue;
-        } else {
-          std::cout << "Finish at frame " << i << "/" << n << " (missing msg in middle)"
-                    << std::endl;
-          break;
-        }
-      }
-
-      data_list.push_back(frame_data);
-    }
-
-    return data_list;
-  }
-
-  void processDataList(const std::vector<FrameData> & data_list)
-  {
-    std::cout << "\nProcessing data list..." << std::endl;
-
-    const int64_t n = static_cast<int64_t>(data_list.size());
-    // Use dimensions from dimensions.hpp
-    constexpr auto ego_history_shape = autoware::diffusion_planner::EGO_HISTORY_SHAPE;
-    const int64_t past_time_steps = ego_history_shape[1];                     // Shape is {1, 21, 4}
-    const int64_t future_time_steps = autoware::diffusion_planner::OUTPUT_T;  // 80
-
-    if (n <= past_time_steps + future_time_steps) {
-      std::cout << "Not enough frames for processing. Need at least "
-                << (past_time_steps + future_time_steps) << " frames, got " << n << std::endl;
-      return;
-    }
-
-    int64_t total_frames = (n - past_time_steps - future_time_steps);
-    if (config_.limit > 0) {
-      total_frames = std::min(total_frames, config_.limit);
-    }
-
-    std::cout << "Processing " << total_frames << " frames..." << std::endl;
-
-    for (int64_t i = past_time_steps; i < past_time_steps + total_frames; i += config_.step) {
-      // Generate token (sequence_id + frame_id)
-      std::ostringstream oss;
-      oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << i;
-      std::string token = oss.str();
-
-      // Create NPY files using FrameData from data_list
-      createNPYFiles(token, data_list[i]);
-
-      if (i % 100 == 0) {
-        std::cout << "Processed frame " << i << "/" << total_frames << std::endl;
-      }
-    }
-
-    std::cout << "Data list processing completed!" << std::endl;
-  }
-
   // Helper function to get timestamp from message with header
   template <typename T>
   rclcpp::Time getMessageTimestamp(const T & msg)
@@ -468,13 +448,13 @@ private:
 
     autoware::diffusion_planner::EgoState ego_state(
       frame_data.kinematic_state, accel_msg, wheel_base);
-    auto ego_array = ego_state.as_array();
+    std::vector<float> ego_array = ego_state.as_array();
     saveEgoCurrentState(token, ego_array);
 
     std::cout << "Ego state dimensions: " << ego_array.size() << std::endl;
 
     // 2. Process tracked objects using dimensions from dimensions.hpp
-    constexpr auto neighbor_shape = autoware::diffusion_planner::NEIGHBOR_SHAPE;
+    constexpr std::array<int64_t, 4> neighbor_shape = autoware::diffusion_planner::NEIGHBOR_SHAPE;
     const int64_t neighbor_num = neighbor_shape[1];  // Shape is {1, 32, 21, 11}
     const int64_t past_time_steps_neighbor = neighbor_shape[2];
 
@@ -524,7 +504,7 @@ private:
     // Get the tensor data from AgentData
     const int64_t num_agents = agent_data.num_agent();
     const int64_t time_length = agent_data.time_length();
-    constexpr auto neighbor_shape = autoware::diffusion_planner::NEIGHBOR_SHAPE;
+    constexpr std::array<int64_t, 4> neighbor_shape = autoware::diffusion_planner::NEIGHBOR_SHAPE;
     const int64_t feature_dim = neighbor_shape[3];  // Shape is {1, 32, 21, 11}
 
     // Get actual tensor data from AgentData
@@ -547,7 +527,7 @@ private:
     const std::string npy_filename = config_.save_dir + "/lanes_" + token + ".npy";
 
     // Use dimensions from dimensions.hpp
-    constexpr auto lanes_shape = autoware::diffusion_planner::LANES_SHAPE;
+    constexpr std::array<int64_t, 4> lanes_shape = autoware::diffusion_planner::LANES_SHAPE;
     const int64_t max_lane_num = lanes_shape[1];  // Shape is {1, 70, 20, 13}
     const int64_t max_lane_len = lanes_shape[2];
     const int64_t lane_feature_dim = lanes_shape[3];
@@ -557,11 +537,11 @@ private:
 
     // Fill with actual lane data (simplified version)
     for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(max_lane_num)); ++i) {
-      const auto & segment = lane_segments[i];
-      const auto & waypoints = segment.polyline.waypoints();
+      const autoware::diffusion_planner::LaneSegment & segment = lane_segments[i];
+      const std::vector<autoware::diffusion_planner::LanePoint> & waypoints = segment.polyline.waypoints();
 
       for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(max_lane_len)); ++j) {
-        const auto & point = waypoints[j];
+        const autoware::diffusion_planner::LanePoint & point = waypoints[j];
         size_t base_idx = i * max_lane_len * lane_feature_dim + j * lane_feature_dim;
 
         if (base_idx + 2 < lane_tensor_data.size()) {
@@ -588,7 +568,7 @@ private:
     const std::string filename = config_.save_dir + "/static_objects_" + token + ".npy";
 
     // Create static objects data using dimensions from dimensions.hpp
-    constexpr auto static_shape = autoware::diffusion_planner::STATIC_OBJECTS_SHAPE;
+    constexpr std::array<int64_t, 3> static_shape = autoware::diffusion_planner::STATIC_OBJECTS_SHAPE;
     const int64_t num_static_objects = static_shape[1];  // Shape is {1, 5, 10}
     const int64_t object_features = static_shape[2];
 
@@ -609,7 +589,7 @@ private:
   {
     const std::string filename = config_.save_dir + "/route_lanes_" + token + ".npy";
     // Create route lanes data using dimensions from dimensions.hpp
-    constexpr auto route_shape = autoware::diffusion_planner::ROUTE_LANES_SHAPE;
+    constexpr std::array<int64_t, 4> route_shape = autoware::diffusion_planner::ROUTE_LANES_SHAPE;
     const int64_t num_route_lanes = route_shape[1];  // Shape is {1, 25, 20, 13}
     const int64_t route_lane_len = route_shape[2];
     const int64_t route_lane_features = route_shape[3];
@@ -621,11 +601,11 @@ private:
     // Fill with actual route lane data (simplified version using available lane_segments)
     for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(num_route_lanes));
          ++i) {
-      const auto & segment = lane_segments[i];
-      const auto & waypoints = segment.polyline.waypoints();
+      const autoware::diffusion_planner::LaneSegment & segment = lane_segments[i];
+      const std::vector<autoware::diffusion_planner::LanePoint> & waypoints = segment.polyline.waypoints();
 
       for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(route_lane_len)); ++j) {
-        const auto & point = waypoints[j];
+        const autoware::diffusion_planner::LanePoint & point = waypoints[j];
         size_t base_idx = i * route_lane_len * route_lane_features + j * route_lane_features;
 
         if (base_idx + 2 < route_lanes_data.size()) {
@@ -742,24 +722,8 @@ ParseRosbagConfig parseArguments(int argc, char * argv[])
   return config;
 }
 
-int main(int argc, char * argv[])
+void printConfiguration(const ParseRosbagConfig & config)
 {
-  // Initialize ROS 2
-  rclcpp::init(argc, argv);
-
-  ParseRosbagConfig config = parseArguments(argc, argv);
-
-  // Validate input paths
-  if (!fs::exists(config.rosbag_path)) {
-    std::cerr << "Error: Rosbag path does not exist: " << config.rosbag_path << std::endl;
-    return 1;
-  }
-
-  if (!fs::exists(config.vector_map_path)) {
-    std::cerr << "Error: Vector map path does not exist: " << config.vector_map_path << std::endl;
-    return 1;
-  }
-
   std::cout << "Configuration:" << std::endl;
   std::cout << "  Rosbag path: " << config.rosbag_path << std::endl;
   std::cout << "  Vector map path: " << config.vector_map_path << std::endl;
@@ -769,16 +733,43 @@ int main(int argc, char * argv[])
   std::cout << "  Min frames: " << config.min_frames << std::endl;
   std::cout << "  Search nearest route: " << (config.search_nearest_route ? "true" : "false")
             << std::endl;
+}
 
-  RosbagParser parser(config);
+int main(int argc, char * argv[])
+{
+  // 1. Initialize ROS 2
+  rclcpp::init(argc, argv);
 
-  if (parser.parseRosbag()) {
-    std::cout << "\nRosbag parsing completed successfully!" << std::endl;
-    return 0;
-  } else {
-    std::cerr << "Failed to parse rosbag!" << std::endl;
+  // 2. Parse and validate arguments
+  ParseRosbagConfig config = parseArguments(argc, argv);
+
+  if (!fs::exists(config.rosbag_path)) {
+    std::cerr << "Error: Rosbag path does not exist: " << config.rosbag_path << std::endl;
     return 1;
   }
+  if (!fs::exists(config.vector_map_path)) {
+    std::cerr << "Error: Vector map path does not exist: " << config.vector_map_path << std::endl;
+    return 1;
+  }
+
+  // 3. Print configuration
+  printConfiguration(config);
+
+  // 4. Create parser and load map
+  RosbagParser parser(config);
+  parser.loadLaneletMap();
+
+  // 5. Read rosbag messages
+  MessageCollections message_collections = parser.readRosbagMessages();
+
+  // 6. Process messages and create data list
+  std::vector<FrameData> data_list = parser.createDataList(message_collections);
+
+  // 7. Process data list and generate output files
+  fs::create_directories(config.save_dir);
+  parser.processDataList(data_list);
+
+  std::cout << "\nRosbag parsing completed successfully!" << std::endl;
 
   rclcpp::shutdown();
   return 0;
