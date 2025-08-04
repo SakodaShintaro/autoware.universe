@@ -78,12 +78,12 @@ struct ParseRosbagConfig
 struct FrameData
 {
   rclcpp::Time timestamp;
-  LaneletRoute::SharedPtr route;
-  TrackedObjects::SharedPtr tracked_objects;
-  Odometry::SharedPtr kinematic_state;
-  AccelWithCovarianceStamped::SharedPtr acceleration;
-  TrafficLightGroupArray::SharedPtr traffic_signals;
-  TurnIndicatorsReport::SharedPtr turn_indicator;
+  LaneletRoute route;
+  TrackedObjects tracked_objects;
+  Odometry kinematic_state;
+  AccelWithCovarianceStamped acceleration;
+  TrafficLightGroupArray traffic_signals;
+  TurnIndicatorsReport turn_indicator;
 };
 
 class RosbagParser
@@ -253,8 +253,10 @@ private:
     std::cout << "  Route: " << route_msgs.size() << std::endl;
     std::cout << "  Turn indicator: " << turn_indicator_msgs.size() << std::endl;
 
-    // For demonstration, process a few sample frames
-    processSampleFrames(kinematic_msgs, tracking_msgs);
+    // Process frames using synchronized data like Python version
+    processFramesWithSync(
+      kinematic_msgs, acceleration_msgs, tracking_msgs, traffic_msgs, route_msgs,
+      turn_indicator_msgs);
   }
 
   std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> getTopicMessages(
@@ -267,6 +269,109 @@ private:
       return it->second;
     }
     return {};
+  }
+
+  void processFramesWithSync(
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & kinematic_msgs,
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & acceleration_msgs,
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & tracking_msgs,
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & traffic_msgs,
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & route_msgs,
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & turn_indicator_msgs)
+  {
+    std::cout << "\nProcessing frames with synchronization..." << std::endl;
+
+    // Use tracking messages as base timing (like Python version)
+    int64_t total_frames = std::min(
+      static_cast<int64_t>(tracking_msgs.size()),
+      config_.limit > 0 ? config_.limit : static_cast<int64_t>(10));
+
+    std::cout << "Processing " << total_frames << " frames..." << std::endl;
+
+    for (int64_t frame_idx = 0; frame_idx < total_frames; frame_idx += config_.step) {
+      // Generate token (sequence_id + frame_id)
+      std::ostringstream oss;
+      oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << frame_idx;
+      std::string token = oss.str();
+
+      // Create FrameData and synchronize messages like Python version
+      FrameData frame_data;
+      frame_data.timestamp = rclcpp::Time(tracking_msgs[frame_idx]->time_stamp);
+
+      // Find closest messages by timestamp for each topic
+      if (!tracking_msgs.empty() && frame_idx < static_cast<int64_t>(tracking_msgs.size())) {
+        frame_data.tracked_objects = deserializeMessage<TrackedObjects>(tracking_msgs[frame_idx]);
+      }
+
+      if (!kinematic_msgs.empty()) {
+        size_t closest_idx = findClosestMessageByTime(kinematic_msgs, frame_data.timestamp);
+        if (closest_idx < kinematic_msgs.size()) {
+          frame_data.kinematic_state = deserializeMessage<Odometry>(kinematic_msgs[closest_idx]);
+        }
+      }
+
+      if (!acceleration_msgs.empty()) {
+        size_t closest_idx = findClosestMessageByTime(acceleration_msgs, frame_data.timestamp);
+        if (closest_idx < acceleration_msgs.size()) {
+          frame_data.acceleration =
+            deserializeMessage<AccelWithCovarianceStamped>(acceleration_msgs[closest_idx]);
+        }
+      }
+
+      if (!route_msgs.empty()) {
+        size_t closest_idx = findClosestMessageByTime(route_msgs, frame_data.timestamp);
+        if (closest_idx < route_msgs.size()) {
+          frame_data.route = deserializeMessage<LaneletRoute>(route_msgs[closest_idx]);
+        }
+      }
+
+      if (!traffic_msgs.empty()) {
+        size_t closest_idx = findClosestMessageByTime(traffic_msgs, frame_data.timestamp);
+        if (closest_idx < traffic_msgs.size()) {
+          frame_data.traffic_signals =
+            deserializeMessage<TrafficLightGroupArray>(traffic_msgs[closest_idx]);
+        }
+      }
+
+      if (!turn_indicator_msgs.empty()) {
+        size_t closest_idx = findClosestMessageByTime(turn_indicator_msgs, frame_data.timestamp);
+        if (closest_idx < turn_indicator_msgs.size()) {
+          frame_data.turn_indicator =
+            deserializeMessage<TurnIndicatorsReport>(turn_indicator_msgs[closest_idx]);
+        }
+      }
+
+      // Create NPY files using synchronized FrameData
+      createNPYFiles(token, frame_data);
+
+      if (frame_idx % 100 == 0) {
+        std::cout << "Processed frame " << frame_idx << "/" << total_frames << std::endl;
+      }
+    }
+
+    std::cout << "Frame processing with synchronization completed!" << std::endl;
+  }
+
+  size_t findClosestMessageByTime(
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & msgs,
+    const rclcpp::Time & target_time)
+  {
+    if (msgs.empty()) return 0;
+
+    size_t closest_idx = 0;
+    int64_t min_diff =
+      std::abs(static_cast<int64_t>(msgs[0]->time_stamp) - target_time.nanoseconds());
+
+    for (size_t i = 1; i < msgs.size(); ++i) {
+      int64_t diff =
+        std::abs(static_cast<int64_t>(msgs[i]->time_stamp) - target_time.nanoseconds());
+      if (diff < min_diff) {
+        min_diff = diff;
+        closest_idx = i;
+      }
+    }
+
+    return closest_idx;
   }
 
   void processSampleFrames(
@@ -285,14 +390,21 @@ private:
       oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << i;
       std::string token = oss.str();
 
-      // Deserialize sample messages for demonstration
-      if (i < static_cast<int64_t>(kinematic_msgs.size())) {
-        auto kinematic_msg = deserializeMessage<Odometry>(kinematic_msgs[i]);
-        auto tracking_msg = deserializeMessage<TrackedObjects>(tracking_msgs[i]);
+      // Create FrameData structure like Python version
+      FrameData frame_data;
+      frame_data.timestamp = rclcpp::Time(tracking_msgs[i]->time_stamp);
 
-        // Create NPY files
-        createNPYFiles(token, kinematic_msg, tracking_msg);
+      // Deserialize messages and populate FrameData
+      if (i < static_cast<int64_t>(kinematic_msgs.size())) {
+        frame_data.kinematic_state = deserializeMessage<Odometry>(kinematic_msgs[i]);
       }
+
+      if (i < static_cast<int64_t>(tracking_msgs.size())) {
+        frame_data.tracked_objects = deserializeMessage<TrackedObjects>(tracking_msgs[i]);
+      }
+
+      // Create NPY files using FrameData
+      createNPYFiles(token, frame_data);
 
       if (i % 100 == 0) {
         std::cout << "Processed sample frame " << i << "/" << sample_count << std::endl;
@@ -302,43 +414,53 @@ private:
     std::cout << "Sample frame processing completed!" << std::endl;
   }
 
-  void createNPYFiles(
-    const std::string & token, const Odometry & kinematic_msg,
-    const TrackedObjects & tracked_objects_msg)
+  void createNPYFiles(const std::string & token, const FrameData & frame_data)
   {
     std::cout << "Creating NPY files for token: " << token << std::endl;
 
     // 1. Create ego state using actual diffusion planner functions
     const double wheel_base = 2.79;  // Same as Python version
-    AccelWithCovarianceStamped dummy_accel;
-    dummy_accel.accel.accel.linear.x = 0.0;
-    dummy_accel.accel.accel.linear.y = 0.0;
 
-    autoware::diffusion_planner::EgoState ego_state(kinematic_msg, dummy_accel, wheel_base);
+    // Use default acceleration if not available
+    AccelWithCovarianceStamped accel_msg = frame_data.acceleration;
+    if (accel_msg.header.stamp.sec == 0) {
+      accel_msg.accel.accel.linear.x = 0.0;
+      accel_msg.accel.accel.linear.y = 0.0;
+    }
+
+    autoware::diffusion_planner::EgoState ego_state(
+      frame_data.kinematic_state, accel_msg, wheel_base);
     auto ego_array = ego_state.as_array();
+    saveEgoCurrentState(token, ego_array);
+
+    std::cout << "Ego state dimensions: " << ego_array.size() << std::endl;
 
     // 2. Process tracked objects
     autoware::diffusion_planner::AgentData agent_data(
-      tracked_objects_msg, 32, 21);  // NEIGHBOR_NUM, PAST_TIME_STEPS
+      frame_data.tracked_objects, 32, 21);  // NEIGHBOR_NUM, PAST_TIME_STEPS
+    saveAgentData(token, agent_data);
+
+    std::cout << "Agent data size: " << agent_data.size() << std::endl;
 
     // 3. Create lane segments if lanelet converter is available
     std::vector<autoware::diffusion_planner::LaneSegment> lane_segments;
     if (lanelet_converter_) {
       lane_segments = lanelet_converter_->convert_to_lane_segments(20);  // LANE_LEN
+      saveLaneData(token, lane_segments);
+      saveRouteLanes(token, lane_segments);  // Use lane_segments as placeholder for route
+
+      std::cout << "Lane segments: " << lane_segments.size() << std::endl;
     }
 
-    std::cout << "Ego state dimensions: " << ego_array.size() << std::endl;
-    std::cout << "Agent data size: " << agent_data.size() << std::endl;
-    std::cout << "Lane segments: " << lane_segments.size() << std::endl;
-
-    // Save NPY files
-    saveEgoCurrentState(token, ego_array);
-    saveAgentData(token, agent_data);
-    saveLaneData(token, lane_segments);
+    // 4. Save other data
     saveStaticObjects(token);
-    saveRouteLanes(token, lane_segments);  // Use lane_segments as placeholder for route
-    saveTurnIndicator(token, 0);           // Placeholder value
-    saveKinematicInfo(token, kinematic_msg);
+
+    // 5. Use turn indicator data
+    int64_t turn_indicator_value = static_cast<int64_t>(frame_data.turn_indicator.report);
+    saveTurnIndicator(token, turn_indicator_value);
+
+    // 6. Save kinematic info for debugging
+    saveKinematicInfo(token, frame_data.kinematic_state);
 
     std::cout << "Created NPY files for token: " << token << std::endl;
   }
