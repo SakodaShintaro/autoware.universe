@@ -154,15 +154,32 @@ public:
     // Process messages
     std::cout << "\nProcessing messages..." << std::endl;
 
-    // Storage for collected messages
-    std::map<std::string, std::vector<rosbag2_storage::SerializedBagMessageSharedPtr>>
-      topic_messages;
+    // Storage for collected messages by type
+    std::vector<Odometry> kinematic_msgs;
+    std::vector<AccelWithCovarianceStamped> acceleration_msgs;
+    std::vector<TrackedObjects> tracking_msgs;
+    std::vector<TrafficLightGroupArray> traffic_msgs;
+    std::vector<LaneletRoute> route_msgs;
+    std::vector<TurnIndicatorsReport> turn_indicator_msgs;
 
     while (reader_.has_next() && (config_.limit < 0 || processed_messages < config_.limit)) {
       auto bag_message = reader_.read_next();
 
-      // Store message for processing
-      topic_messages[bag_message->topic_name].push_back(bag_message);
+      // Deserialize and store messages by type
+      if (bag_message->topic_name == "/localization/kinematic_state") {
+        kinematic_msgs.push_back(deserializeMessage<Odometry>(bag_message));
+      } else if (bag_message->topic_name == "/localization/acceleration") {
+        acceleration_msgs.push_back(deserializeMessage<AccelWithCovarianceStamped>(bag_message));
+      } else if (bag_message->topic_name == "/perception/object_recognition/tracking/objects") {
+        tracking_msgs.push_back(deserializeMessage<TrackedObjects>(bag_message));
+      } else if (
+        bag_message->topic_name == "/perception/traffic_light_recognition/traffic_signals") {
+        traffic_msgs.push_back(deserializeMessage<TrafficLightGroupArray>(bag_message));
+      } else if (bag_message->topic_name == "/planning/mission_planning/route") {
+        route_msgs.push_back(deserializeMessage<LaneletRoute>(bag_message));
+      } else if (bag_message->topic_name == "/vehicle/status/turn_indicators_status") {
+        turn_indicator_msgs.push_back(deserializeMessage<TurnIndicatorsReport>(bag_message));
+      }
 
       processed_messages++;
 
@@ -180,8 +197,18 @@ public:
     // Save parsing results
     saveParsingResults(topic_counts);
 
+    std::cout << "\nCollected messages:" << std::endl;
+    std::cout << "  Kinematic: " << kinematic_msgs.size() << std::endl;
+    std::cout << "  Acceleration: " << acceleration_msgs.size() << std::endl;
+    std::cout << "  Tracking: " << tracking_msgs.size() << std::endl;
+    std::cout << "  Traffic: " << traffic_msgs.size() << std::endl;
+    std::cout << "  Route: " << route_msgs.size() << std::endl;
+    std::cout << "  Turn indicator: " << turn_indicator_msgs.size() << std::endl;
+
     // Process collected messages and create output data
-    processMessages(topic_messages);
+    processFramesWithTypedMessages(
+      kinematic_msgs, acceleration_msgs, tracking_msgs, traffic_msgs, route_msgs,
+      turn_indicator_msgs);
 
     std::cout << "\nRosbag parsing completed successfully!" << std::endl;
     std::cout << "Total messages processed: " << processed_messages << std::endl;
@@ -228,56 +255,13 @@ private:
     std::cout << "Lanelet2 map loaded successfully!" << std::endl;
   }
 
-  void processMessages(
-    const std::map<std::string, std::vector<rosbag2_storage::SerializedBagMessageSharedPtr>> &
-      topic_messages)
-  {
-    std::cout << "\nProcessing collected messages..." << std::endl;
-
-    // Get message vectors for each topic
-    auto kinematic_msgs = getTopicMessages(topic_messages, "/localization/kinematic_state");
-    auto acceleration_msgs = getTopicMessages(topic_messages, "/localization/acceleration");
-    auto tracking_msgs =
-      getTopicMessages(topic_messages, "/perception/object_recognition/tracking/objects");
-    auto traffic_msgs =
-      getTopicMessages(topic_messages, "/perception/traffic_light_recognition/traffic_signals");
-    auto route_msgs = getTopicMessages(topic_messages, "/planning/mission_planning/route");
-    auto turn_indicator_msgs =
-      getTopicMessages(topic_messages, "/vehicle/status/turn_indicators_status");
-
-    std::cout << "Collected messages:" << std::endl;
-    std::cout << "  Kinematic: " << kinematic_msgs.size() << std::endl;
-    std::cout << "  Acceleration: " << acceleration_msgs.size() << std::endl;
-    std::cout << "  Tracking: " << tracking_msgs.size() << std::endl;
-    std::cout << "  Traffic: " << traffic_msgs.size() << std::endl;
-    std::cout << "  Route: " << route_msgs.size() << std::endl;
-    std::cout << "  Turn indicator: " << turn_indicator_msgs.size() << std::endl;
-
-    // Process frames using synchronized data like Python version
-    processFramesWithSync(
-      kinematic_msgs, acceleration_msgs, tracking_msgs, traffic_msgs, route_msgs,
-      turn_indicator_msgs);
-  }
-
-  std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> getTopicMessages(
-    const std::map<std::string, std::vector<rosbag2_storage::SerializedBagMessageSharedPtr>> &
-      topic_messages,
-    const std::string & topic_name)
-  {
-    auto it = topic_messages.find(topic_name);
-    if (it != topic_messages.end()) {
-      return it->second;
-    }
-    return {};
-  }
-
-  void processFramesWithSync(
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & kinematic_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & acceleration_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & tracking_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & traffic_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & route_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & turn_indicator_msgs)
+  void processFramesWithTypedMessages(
+    const std::vector<Odometry> & kinematic_msgs,
+    const std::vector<AccelWithCovarianceStamped> & acceleration_msgs,
+    const std::vector<TrackedObjects> & tracking_msgs,
+    const std::vector<TrafficLightGroupArray> & traffic_msgs,
+    const std::vector<LaneletRoute> & route_msgs,
+    const std::vector<TurnIndicatorsReport> & turn_indicator_msgs)
   {
     std::cout << "\nProcessing frames with synchronization..." << std::endl;
 
@@ -296,48 +280,45 @@ private:
 
       // Create FrameData and synchronize messages like Python version
       FrameData frame_data;
-      frame_data.timestamp = rclcpp::Time(tracking_msgs[frame_idx]->time_stamp);
+      frame_data.timestamp = rclcpp::Time(tracking_msgs[frame_idx].header.stamp);
 
       // Find closest messages by timestamp for each topic
       if (!tracking_msgs.empty() && frame_idx < static_cast<int64_t>(tracking_msgs.size())) {
-        frame_data.tracked_objects = deserializeMessage<TrackedObjects>(tracking_msgs[frame_idx]);
+        frame_data.tracked_objects = tracking_msgs[frame_idx];
       }
 
       if (!kinematic_msgs.empty()) {
         size_t closest_idx = findClosestMessageByTime(kinematic_msgs, frame_data.timestamp);
         if (closest_idx < kinematic_msgs.size()) {
-          frame_data.kinematic_state = deserializeMessage<Odometry>(kinematic_msgs[closest_idx]);
+          frame_data.kinematic_state = kinematic_msgs[closest_idx];
         }
       }
 
       if (!acceleration_msgs.empty()) {
         size_t closest_idx = findClosestMessageByTime(acceleration_msgs, frame_data.timestamp);
         if (closest_idx < acceleration_msgs.size()) {
-          frame_data.acceleration =
-            deserializeMessage<AccelWithCovarianceStamped>(acceleration_msgs[closest_idx]);
+          frame_data.acceleration = acceleration_msgs[closest_idx];
         }
       }
 
       if (!route_msgs.empty()) {
         size_t closest_idx = findClosestMessageByTime(route_msgs, frame_data.timestamp);
         if (closest_idx < route_msgs.size()) {
-          frame_data.route = deserializeMessage<LaneletRoute>(route_msgs[closest_idx]);
+          frame_data.route = route_msgs[closest_idx];
         }
       }
 
       if (!traffic_msgs.empty()) {
         size_t closest_idx = findClosestMessageByTime(traffic_msgs, frame_data.timestamp);
         if (closest_idx < traffic_msgs.size()) {
-          frame_data.traffic_signals =
-            deserializeMessage<TrafficLightGroupArray>(traffic_msgs[closest_idx]);
+          frame_data.traffic_signals = traffic_msgs[closest_idx];
         }
       }
 
       if (!turn_indicator_msgs.empty()) {
         size_t closest_idx = findClosestMessageByTime(turn_indicator_msgs, frame_data.timestamp);
         if (closest_idx < turn_indicator_msgs.size()) {
-          frame_data.turn_indicator =
-            deserializeMessage<TurnIndicatorsReport>(turn_indicator_msgs[closest_idx]);
+          frame_data.turn_indicator = turn_indicator_msgs[closest_idx];
         }
       }
 
@@ -352,19 +333,37 @@ private:
     std::cout << "Frame processing with synchronization completed!" << std::endl;
   }
 
-  size_t findClosestMessageByTime(
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & msgs,
-    const rclcpp::Time & target_time)
+  // Helper function to get timestamp from message with header
+  template <typename T>
+  rclcpp::Time getMessageTimestamp(const T & msg)
+  {
+    return rclcpp::Time(msg.header.stamp);
+  }
+
+  // Overloads for messages with stamp field instead of header
+  rclcpp::Time getMessageTimestamp(const TrafficLightGroupArray & msg)
+  {
+    return rclcpp::Time(msg.stamp);
+  }
+
+  rclcpp::Time getMessageTimestamp(const TurnIndicatorsReport & msg)
+  {
+    return rclcpp::Time(msg.stamp);
+  }
+
+  // Template version for messages with header
+  template <typename T>
+  size_t findClosestMessageByTime(const std::vector<T> & msgs, const rclcpp::Time & target_time)
   {
     if (msgs.empty()) return 0;
 
     size_t closest_idx = 0;
     int64_t min_diff =
-      std::abs(static_cast<int64_t>(msgs[0]->time_stamp) - target_time.nanoseconds());
+      std::abs(getMessageTimestamp(msgs[0]).nanoseconds() - target_time.nanoseconds());
 
     for (size_t i = 1; i < msgs.size(); ++i) {
       int64_t diff =
-        std::abs(static_cast<int64_t>(msgs[i]->time_stamp) - target_time.nanoseconds());
+        std::abs(getMessageTimestamp(msgs[i]).nanoseconds() - target_time.nanoseconds());
       if (diff < min_diff) {
         min_diff = diff;
         closest_idx = i;
