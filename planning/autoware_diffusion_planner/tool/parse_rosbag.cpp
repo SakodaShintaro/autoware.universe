@@ -538,7 +538,8 @@ private:
     // Fill with actual lane data (simplified version)
     for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(max_lane_num)); ++i) {
       const autoware::diffusion_planner::LaneSegment & segment = lane_segments[i];
-      const std::vector<autoware::diffusion_planner::LanePoint> & waypoints = segment.polyline.waypoints();
+      const std::vector<autoware::diffusion_planner::LanePoint> & waypoints =
+        segment.polyline.waypoints();
 
       for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(max_lane_len)); ++j) {
         const autoware::diffusion_planner::LanePoint & point = waypoints[j];
@@ -568,7 +569,8 @@ private:
     const std::string filename = config_.save_dir + "/static_objects_" + token + ".npy";
 
     // Create static objects data using dimensions from dimensions.hpp
-    constexpr std::array<int64_t, 3> static_shape = autoware::diffusion_planner::STATIC_OBJECTS_SHAPE;
+    constexpr std::array<int64_t, 3> static_shape =
+      autoware::diffusion_planner::STATIC_OBJECTS_SHAPE;
     const int64_t num_static_objects = static_shape[1];  // Shape is {1, 5, 10}
     const int64_t object_features = static_shape[2];
 
@@ -602,7 +604,8 @@ private:
     for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(num_route_lanes));
          ++i) {
       const autoware::diffusion_planner::LaneSegment & segment = lane_segments[i];
-      const std::vector<autoware::diffusion_planner::LanePoint> & waypoints = segment.polyline.waypoints();
+      const std::vector<autoware::diffusion_planner::LanePoint> & waypoints =
+        segment.polyline.waypoints();
 
       for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(route_lane_len)); ++j) {
         const autoware::diffusion_planner::LanePoint & point = waypoints[j];
