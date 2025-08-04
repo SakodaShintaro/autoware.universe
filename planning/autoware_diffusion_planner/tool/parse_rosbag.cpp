@@ -109,87 +109,81 @@ public:
 
   bool parseRosbag()
   {
-    try {
-      std::cout << "Starting rosbag parsing..." << std::endl;
-      std::cout << "Rosbag path: " << config_.rosbag_path << std::endl;
-      std::cout << "Vector map path: " << config_.vector_map_path << std::endl;
+    std::cout << "Starting rosbag parsing..." << std::endl;
+    std::cout << "Rosbag path: " << config_.rosbag_path << std::endl;
+    std::cout << "Vector map path: " << config_.vector_map_path << std::endl;
 
-      // Open rosbag
-      reader_.open(storage_options_, converter_options_);
+    // Open rosbag
+    reader_.open(storage_options_, converter_options_);
 
-      // Set topic filter
-      rosbag2_storage::StorageFilter storage_filter;
-      storage_filter.topics = target_topics_;
-      reader_.set_filter(storage_filter);
+    // Set topic filter
+    rosbag2_storage::StorageFilter storage_filter;
+    storage_filter.topics = target_topics_;
+    reader_.set_filter(storage_filter);
 
-      std::map<std::string, int64_t> topic_counts;
-      int64_t total_messages = 0;
-      int64_t processed_messages = 0;
+    std::map<std::string, int64_t> topic_counts;
+    int64_t total_messages = 0;
+    int64_t processed_messages = 0;
 
-      // First pass: count messages
-      std::cout << "Counting messages..." << std::endl;
-      while (reader_.has_next()) {
-        auto bag_message = reader_.read_next();
-        topic_counts[bag_message->topic_name]++;
-        total_messages++;
+    // First pass: count messages
+    std::cout << "Counting messages..." << std::endl;
+    while (reader_.has_next()) {
+      auto bag_message = reader_.read_next();
+      topic_counts[bag_message->topic_name]++;
+      total_messages++;
 
-        if (config_.limit > 0 && total_messages >= config_.limit) {
-          break;
-        }
+      if (config_.limit > 0 && total_messages >= config_.limit) {
+        break;
       }
-
-      // Print statistics
-      std::cout << "\nMessage counts per topic:" << std::endl;
-      for (const auto & [topic, count] : topic_counts) {
-        std::cout << "  " << topic << ": " << count << " messages" << std::endl;
-      }
-
-      // Reopen rosbag for processing
-      reader_.close();
-      reader_.open(storage_options_, converter_options_);
-      reader_.set_filter(storage_filter);
-
-      // Process messages
-      std::cout << "\nProcessing messages..." << std::endl;
-
-      // Storage for collected messages
-      std::map<std::string, std::vector<rosbag2_storage::SerializedBagMessageSharedPtr>>
-        topic_messages;
-
-      while (reader_.has_next() && (config_.limit < 0 || processed_messages < config_.limit)) {
-        auto bag_message = reader_.read_next();
-
-        // Store message for processing
-        topic_messages[bag_message->topic_name].push_back(bag_message);
-
-        processed_messages++;
-
-        if (processed_messages % 1000 == 0) {
-          std::cout << "Processed " << processed_messages << "/" << total_messages << " messages..."
-                    << std::endl;
-        }
-      }
-
-      reader_.close();
-
-      // Create output directory
-      fs::create_directories(config_.save_dir);
-
-      // Save parsing results
-      saveParsingResults(topic_counts);
-
-      // Process collected messages and create output data
-      processMessages(topic_messages);
-
-      std::cout << "\nRosbag parsing completed successfully!" << std::endl;
-      std::cout << "Total messages processed: " << processed_messages << std::endl;
-
-      return true;
-
-    } catch (const std::exception & e) {
-      std::cerr << "Error parsing rosbag: " << e.what() << std::endl;
-      return false;
     }
+
+    // Print statistics
+    std::cout << "\nMessage counts per topic:" << std::endl;
+    for (const auto & [topic, count] : topic_counts) {
+      std::cout << "  " << topic << ": " << count << " messages" << std::endl;
+    }
+
+    // Reopen rosbag for processing
+    reader_.close();
+    reader_.open(storage_options_, converter_options_);
+    reader_.set_filter(storage_filter);
+
+    // Process messages
+    std::cout << "\nProcessing messages..." << std::endl;
+
+    // Storage for collected messages
+    std::map<std::string, std::vector<rosbag2_storage::SerializedBagMessageSharedPtr>>
+      topic_messages;
+
+    while (reader_.has_next() && (config_.limit < 0 || processed_messages < config_.limit)) {
+      auto bag_message = reader_.read_next();
+
+      // Store message for processing
+      topic_messages[bag_message->topic_name].push_back(bag_message);
+
+      processed_messages++;
+
+      if (processed_messages % 1000 == 0) {
+        std::cout << "Processed " << processed_messages << "/" << total_messages << " messages..."
+                  << std::endl;
+      }
+    }
+
+    reader_.close();
+
+    // Create output directory
+    fs::create_directories(config_.save_dir);
+
+    // Save parsing results
+    saveParsingResults(topic_counts);
+
+    // Process collected messages and create output data
+    processMessages(topic_messages);
+
+    std::cout << "\nRosbag parsing completed successfully!" << std::endl;
+    std::cout << "Total messages processed: " << processed_messages << std::endl;
+
+    return true;
   }
 
   template <typename T>
@@ -205,36 +199,30 @@ public:
 private:
   void initializeLaneletMap()
   {
-    try {
-      std::cout << "Loading Lanelet2 map from: " << config_.vector_map_path << std::endl;
+    std::cout << "Loading Lanelet2 map from: " << config_.vector_map_path << std::endl;
 
-      // Load map using test utilities (similar to lanelet_integration_test.cpp)
-      if (config_.vector_map_path.find(".osm") != std::string::npos) {
-        // OSM file
-        map_bin_msg_ = autoware::test_utils::make_map_bin_msg(config_.vector_map_path, 1.0);
-      } else {
-        std::cerr << "Unsupported map format. Expected .osm file." << std::endl;
-        return;
-      }
-
-      // Convert HADMapBin to lanelet map
-      lanelet_map_ptr_ = std::make_shared<lanelet::LaneletMap>();
-      lanelet::utils::conversion::fromBinMsg(
-        map_bin_msg_, lanelet_map_ptr_, &traffic_rules_ptr_, &routing_graph_ptr_);
-
-      // Create LaneletConverter instance
-      const size_t max_num_polyline = 70;  // Same as Python LANE_NUM
-      const size_t max_num_point = 20;     // Same as Python LANE_LEN
-      const double point_break_distance = 100.0;
-      lanelet_converter_ = std::make_unique<autoware::diffusion_planner::LaneletConverter>(
-        lanelet_map_ptr_, max_num_polyline, max_num_point, point_break_distance);
-
-      std::cout << "Lanelet2 map loaded successfully!" << std::endl;
-
-    } catch (const std::exception & e) {
-      std::cerr << "Error loading Lanelet2 map: " << e.what() << std::endl;
-      // Continue without map for now
+    // Load map using test utilities (similar to lanelet_integration_test.cpp)
+    if (config_.vector_map_path.find(".osm") != std::string::npos) {
+      // OSM file
+      map_bin_msg_ = autoware::test_utils::make_map_bin_msg(config_.vector_map_path, 1.0);
+    } else {
+      std::cerr << "Unsupported map format. Expected .osm file." << std::endl;
+      return;
     }
+
+    // Convert HADMapBin to lanelet map
+    lanelet_map_ptr_ = std::make_shared<lanelet::LaneletMap>();
+    lanelet::utils::conversion::fromBinMsg(
+      map_bin_msg_, lanelet_map_ptr_, &traffic_rules_ptr_, &routing_graph_ptr_);
+
+    // Create LaneletConverter instance
+    const size_t max_num_polyline = 70;  // Same as Python LANE_NUM
+    const size_t max_num_point = 20;     // Same as Python LANE_LEN
+    const double point_break_distance = 100.0;
+    lanelet_converter_ = std::make_unique<autoware::diffusion_planner::LaneletConverter>(
+      lanelet_map_ptr_, max_num_polyline, max_num_point, point_break_distance);
+
+    std::cout << "Lanelet2 map loaded successfully!" << std::endl;
   }
 
   void processMessages(
@@ -294,19 +282,13 @@ private:
       oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << i;
       std::string token = oss.str();
 
-      try {
-        // Deserialize sample messages for demonstration
-        if (i < static_cast<int64_t>(kinematic_msgs.size())) {
-          auto kinematic_msg = deserializeMessage<Odometry>(kinematic_msgs[i]);
-          auto tracking_msg = deserializeMessage<TrackedObjects>(tracking_msgs[i]);
+      // Deserialize sample messages for demonstration
+      if (i < static_cast<int64_t>(kinematic_msgs.size())) {
+        auto kinematic_msg = deserializeMessage<Odometry>(kinematic_msgs[i]);
+        auto tracking_msg = deserializeMessage<TrackedObjects>(tracking_msgs[i]);
 
-          // Create NPY files
-          createNPYFiles(token, kinematic_msg, tracking_msg);
-        }
-
-      } catch (const std::exception & e) {
-        std::cerr << "Error processing frame " << i << ": " << e.what() << std::endl;
-        continue;
+        // Create NPY files
+        createNPYFiles(token, kinematic_msg, tracking_msg);
       }
 
       if (i % 100 == 0) {
@@ -323,41 +305,36 @@ private:
   {
     std::cout << "Creating NPY files for token: " << token << std::endl;
 
-    try {
-      // 1. Create ego state using actual diffusion planner functions
-      const double wheel_base = 2.79;  // Same as Python version
-      AccelWithCovarianceStamped dummy_accel;
-      dummy_accel.accel.accel.linear.x = 0.0;
-      dummy_accel.accel.accel.linear.y = 0.0;
+    // 1. Create ego state using actual diffusion planner functions
+    const double wheel_base = 2.79;  // Same as Python version
+    AccelWithCovarianceStamped dummy_accel;
+    dummy_accel.accel.accel.linear.x = 0.0;
+    dummy_accel.accel.accel.linear.y = 0.0;
 
-      autoware::diffusion_planner::EgoState ego_state(kinematic_msg, dummy_accel, wheel_base);
-      auto ego_array = ego_state.as_array();
+    autoware::diffusion_planner::EgoState ego_state(kinematic_msg, dummy_accel, wheel_base);
+    auto ego_array = ego_state.as_array();
 
-      // 2. Process tracked objects
-      autoware::diffusion_planner::AgentData agent_data(
-        tracked_objects_msg, 32, 21);  // NEIGHBOR_NUM, PAST_TIME_STEPS
+    // 2. Process tracked objects
+    autoware::diffusion_planner::AgentData agent_data(
+      tracked_objects_msg, 32, 21);  // NEIGHBOR_NUM, PAST_TIME_STEPS
 
-      // 3. Create lane segments if lanelet converter is available
-      std::vector<autoware::diffusion_planner::LaneSegment> lane_segments;
-      if (lanelet_converter_) {
-        lane_segments = lanelet_converter_->convert_to_lane_segments(20);  // LANE_LEN
-      }
-
-      std::cout << "Ego state dimensions: " << ego_array.size() << std::endl;
-      std::cout << "Agent data size: " << agent_data.size() << std::endl;
-      std::cout << "Lane segments: " << lane_segments.size() << std::endl;
-
-      // Save NPY files
-      saveEgoCurrentState(token, ego_array);
-      saveAgentData(token, agent_data);
-      saveLaneData(token, lane_segments);
-      saveKinematicInfo(token, kinematic_msg);
-
-      std::cout << "Created NPY files for token: " << token << std::endl;
-
-    } catch (const std::exception & e) {
-      std::cerr << "Error creating NPY files for token " << token << ": " << e.what() << std::endl;
+    // 3. Create lane segments if lanelet converter is available
+    std::vector<autoware::diffusion_planner::LaneSegment> lane_segments;
+    if (lanelet_converter_) {
+      lane_segments = lanelet_converter_->convert_to_lane_segments(20);  // LANE_LEN
     }
+
+    std::cout << "Ego state dimensions: " << ego_array.size() << std::endl;
+    std::cout << "Agent data size: " << agent_data.size() << std::endl;
+    std::cout << "Lane segments: " << lane_segments.size() << std::endl;
+
+    // Save NPY files
+    saveEgoCurrentState(token, ego_array);
+    saveAgentData(token, agent_data);
+    saveLaneData(token, lane_segments);
+    saveKinematicInfo(token, kinematic_msg);
+
+    std::cout << "Created NPY files for token: " << token << std::endl;
   }
 
   void saveEgoCurrentState(const std::string & token, const std::vector<float> & ego_array)
@@ -537,42 +514,36 @@ int main(int argc, char * argv[])
   // Initialize ROS 2
   rclcpp::init(argc, argv);
 
-  try {
-    ParseRosbagConfig config = parseArguments(argc, argv);
+  ParseRosbagConfig config = parseArguments(argc, argv);
 
-    // Validate input paths
-    if (!fs::exists(config.rosbag_path)) {
-      std::cerr << "Error: Rosbag path does not exist: " << config.rosbag_path << std::endl;
-      return 1;
-    }
+  // Validate input paths
+  if (!fs::exists(config.rosbag_path)) {
+    std::cerr << "Error: Rosbag path does not exist: " << config.rosbag_path << std::endl;
+    return 1;
+  }
 
-    if (!fs::exists(config.vector_map_path)) {
-      std::cerr << "Error: Vector map path does not exist: " << config.vector_map_path << std::endl;
-      return 1;
-    }
+  if (!fs::exists(config.vector_map_path)) {
+    std::cerr << "Error: Vector map path does not exist: " << config.vector_map_path << std::endl;
+    return 1;
+  }
 
-    std::cout << "Configuration:" << std::endl;
-    std::cout << "  Rosbag path: " << config.rosbag_path << std::endl;
-    std::cout << "  Vector map path: " << config.vector_map_path << std::endl;
-    std::cout << "  Save directory: " << config.save_dir << std::endl;
-    std::cout << "  Step: " << config.step << std::endl;
-    std::cout << "  Limit: " << config.limit << std::endl;
-    std::cout << "  Min frames: " << config.min_frames << std::endl;
-    std::cout << "  Search nearest route: " << (config.search_nearest_route ? "true" : "false")
-              << std::endl;
+  std::cout << "Configuration:" << std::endl;
+  std::cout << "  Rosbag path: " << config.rosbag_path << std::endl;
+  std::cout << "  Vector map path: " << config.vector_map_path << std::endl;
+  std::cout << "  Save directory: " << config.save_dir << std::endl;
+  std::cout << "  Step: " << config.step << std::endl;
+  std::cout << "  Limit: " << config.limit << std::endl;
+  std::cout << "  Min frames: " << config.min_frames << std::endl;
+  std::cout << "  Search nearest route: " << (config.search_nearest_route ? "true" : "false")
+            << std::endl;
 
-    RosbagParser parser(config);
+  RosbagParser parser(config);
 
-    if (parser.parseRosbag()) {
-      std::cout << "\nRosbag parsing completed successfully!" << std::endl;
-      return 0;
-    } else {
-      std::cerr << "Failed to parse rosbag!" << std::endl;
-      return 1;
-    }
-
-  } catch (const std::exception & e) {
-    std::cerr << "Error: " << e.what() << std::endl;
+  if (parser.parseRosbag()) {
+    std::cout << "\nRosbag parsing completed successfully!" << std::endl;
+    return 0;
+  } else {
+    std::cerr << "Failed to parse rosbag!" << std::endl;
     return 1;
   }
 
