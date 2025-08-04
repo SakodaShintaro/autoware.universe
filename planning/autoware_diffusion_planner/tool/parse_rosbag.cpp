@@ -374,46 +374,6 @@ private:
     return closest_idx;
   }
 
-  void processSampleFrames(
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & kinematic_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & tracking_msgs)
-  {
-    std::cout << "\nProcessing sample frames..." << std::endl;
-
-    // Use tracking messages as base (10Hz in the original Python code)
-    int64_t sample_count =
-      std::min(static_cast<int64_t>(tracking_msgs.size()), static_cast<int64_t>(10));
-
-    for (int64_t i = 0; i < sample_count; i += config_.step) {
-      // Generate token (sequence_id + frame_id)
-      std::ostringstream oss;
-      oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << i;
-      std::string token = oss.str();
-
-      // Create FrameData structure like Python version
-      FrameData frame_data;
-      frame_data.timestamp = rclcpp::Time(tracking_msgs[i]->time_stamp);
-
-      // Deserialize messages and populate FrameData
-      if (i < static_cast<int64_t>(kinematic_msgs.size())) {
-        frame_data.kinematic_state = deserializeMessage<Odometry>(kinematic_msgs[i]);
-      }
-
-      if (i < static_cast<int64_t>(tracking_msgs.size())) {
-        frame_data.tracked_objects = deserializeMessage<TrackedObjects>(tracking_msgs[i]);
-      }
-
-      // Create NPY files using FrameData
-      createNPYFiles(token, frame_data);
-
-      if (i % 100 == 0) {
-        std::cout << "Processed sample frame " << i << "/" << sample_count << std::endl;
-      }
-    }
-
-    std::cout << "Sample frame processing completed!" << std::endl;
-  }
-
   void createNPYFiles(const std::string & token, const FrameData & frame_data)
   {
     std::cout << "Creating NPY files for token: " << token << std::endl;
