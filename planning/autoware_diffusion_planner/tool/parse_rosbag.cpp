@@ -22,6 +22,7 @@
 #include <vector>
 
 // Message types
+#include <autoware_map_msgs/msg/lanelet_map_bin.hpp>
 #include <autoware_perception_msgs/msg/tracked_objects.hpp>
 #include <autoware_perception_msgs/msg/traffic_light_group_array.hpp>
 #include <autoware_planning_msgs/msg/lanelet_route.hpp>
@@ -51,6 +52,15 @@
 
 namespace fs = std::filesystem;
 
+// Message type aliases
+using TrackedObjects = autoware_perception_msgs::msg::TrackedObjects;
+using TrafficLightGroupArray = autoware_perception_msgs::msg::TrafficLightGroupArray;
+using LaneletRoute = autoware_planning_msgs::msg::LaneletRoute;
+using TurnIndicatorsReport = autoware_vehicle_msgs::msg::TurnIndicatorsReport;
+using AccelWithCovarianceStamped = geometry_msgs::msg::AccelWithCovarianceStamped;
+using Odometry = nav_msgs::msg::Odometry;
+using LaneletMapBin = autoware_map_msgs::msg::LaneletMapBin;
+
 struct ParseRosbagConfig
 {
   std::string rosbag_path;
@@ -65,12 +75,12 @@ struct ParseRosbagConfig
 struct FrameData
 {
   rclcpp::Time timestamp;
-  autoware_planning_msgs::msg::LaneletRoute::SharedPtr route;
-  autoware_perception_msgs::msg::TrackedObjects::SharedPtr tracked_objects;
-  nav_msgs::msg::Odometry::SharedPtr kinematic_state;
-  geometry_msgs::msg::AccelWithCovarianceStamped::SharedPtr acceleration;
-  autoware_perception_msgs::msg::TrafficLightGroupArray::SharedPtr traffic_signals;
-  autoware_vehicle_msgs::msg::TurnIndicatorsReport::SharedPtr turn_indicator;
+  LaneletRoute::SharedPtr route;
+  TrackedObjects::SharedPtr tracked_objects;
+  Odometry::SharedPtr kinematic_state;
+  AccelWithCovarianceStamped::SharedPtr acceleration;
+  TrafficLightGroupArray::SharedPtr traffic_signals;
+  TurnIndicatorsReport::SharedPtr turn_indicator;
 };
 
 class RosbagParser
@@ -287,9 +297,8 @@ private:
       try {
         // Deserialize sample messages for demonstration
         if (i < static_cast<int64_t>(kinematic_msgs.size())) {
-          auto kinematic_msg = deserializeMessage<nav_msgs::msg::Odometry>(kinematic_msgs[i]);
-          auto tracking_msg =
-            deserializeMessage<autoware_perception_msgs::msg::TrackedObjects>(tracking_msgs[i]);
+          auto kinematic_msg = deserializeMessage<Odometry>(kinematic_msgs[i]);
+          auto tracking_msg = deserializeMessage<TrackedObjects>(tracking_msgs[i]);
 
           // Create NPY files
           createNPYFiles(token, kinematic_msg, tracking_msg);
@@ -309,15 +318,15 @@ private:
   }
 
   void createNPYFiles(
-    const std::string & token, const nav_msgs::msg::Odometry & kinematic_msg,
-    const autoware_perception_msgs::msg::TrackedObjects & tracked_objects_msg)
+    const std::string & token, const Odometry & kinematic_msg,
+    const TrackedObjects & tracked_objects_msg)
   {
     std::cout << "Creating NPY files for token: " << token << std::endl;
 
     try {
       // 1. Create ego state using actual diffusion planner functions
       const double wheel_base = 2.79;  // Same as Python version
-      geometry_msgs::msg::AccelWithCovarianceStamped dummy_accel;
+      AccelWithCovarianceStamped dummy_accel;
       dummy_accel.accel.accel.linear.x = 0.0;
       dummy_accel.accel.accel.linear.y = 0.0;
 
@@ -410,7 +419,7 @@ private:
     }
   }
 
-  void saveKinematicInfo(const std::string & token, const nav_msgs::msg::Odometry & kinematic_msg)
+  void saveKinematicInfo(const std::string & token, const Odometry & kinematic_msg)
   {
     std::string filename = config_.save_dir + "/kinematic_" + token + ".json";
     std::ofstream file(filename);
@@ -469,7 +478,7 @@ private:
   rosbag2_cpp::ConverterOptions converter_options_;
 
   // Lanelet2 map processing
-  autoware_map_msgs::msg::LaneletMapBin map_bin_msg_;
+  LaneletMapBin map_bin_msg_;
   std::shared_ptr<lanelet::LaneletMap> lanelet_map_ptr_;
   lanelet::traffic_rules::TrafficRulesPtr traffic_rules_ptr_;
   lanelet::routing::RoutingGraphPtr routing_graph_ptr_;
