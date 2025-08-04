@@ -40,6 +40,8 @@
   <depend>nlohmann-json-dev</depend>
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>rosbag2_storage</depend>
   <depend>std_msgs</depend>
   <depend>visualization_msgs</depend>
 
