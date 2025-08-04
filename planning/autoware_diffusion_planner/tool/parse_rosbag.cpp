@@ -40,6 +40,7 @@
 #include <autoware/diffusion_planner/conversion/agent.hpp>
 #include <autoware/diffusion_planner/conversion/ego.hpp>
 #include <autoware/diffusion_planner/conversion/lanelet.hpp>
+#include <autoware/diffusion_planner/dimensions.hpp>
 #include <autoware/diffusion_planner/preprocessing/lane_segments.hpp>
 #include <autoware/diffusion_planner/preprocessing/traffic_signals.hpp>
 #include <autoware/diffusion_planner/utils/utils.hpp>
@@ -260,10 +261,8 @@ private:
   void processFramesWithTypedMessages(
     std::deque<Odometry> & kinematic_msgs,
     std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
-    std::deque<TrackedObjects> & tracking_msgs,
-    std::deque<TrafficLightGroupArray> & traffic_msgs,
-    std::deque<LaneletRoute> & route_msgs,
-    std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
+    std::deque<TrackedObjects> & tracking_msgs, std::deque<TrafficLightGroupArray> & traffic_msgs,
+    std::deque<LaneletRoute> & route_msgs, std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
   {
     std::cout << "\nMatching messages to create data list..." << std::endl;
 
@@ -318,10 +317,8 @@ private:
   std::vector<FrameData> createDataList(
     std::deque<Odometry> & kinematic_msgs,
     std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
-    std::deque<TrackedObjects> & tracking_msgs,
-    std::deque<TrafficLightGroupArray> & traffic_msgs,
-    std::deque<LaneletRoute> & route_msgs,
-    std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
+    std::deque<TrackedObjects> & tracking_msgs, std::deque<TrafficLightGroupArray> & traffic_msgs,
+    std::deque<LaneletRoute> & route_msgs, std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
   {
     std::vector<FrameData> data_list;
 
@@ -611,9 +608,10 @@ private:
   {
     std::string filename = config_.save_dir + "/static_objects_" + token + ".npy";
 
-    // Create static objects data with shape (5, 10) as mentioned in conversation
-    const int64_t num_static_objects = 5;
-    const int64_t object_features = 10;
+    // Create static objects data using dimensions from dimensions.hpp
+    constexpr auto static_shape = autoware::diffusion_planner::STATIC_OBJECTS_SHAPE;
+    const int64_t num_static_objects = static_shape[1];  // Shape is {1, 5, 10}
+    const int64_t object_features = static_shape[2];
 
     // Create placeholder static objects data
     std::vector<float> static_objects_data(num_static_objects * object_features, 0.0f);
@@ -631,10 +629,11 @@ private:
     const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
   {
     std::string filename = config_.save_dir + "/route_lanes_" + token + ".npy";
-    // Create route lanes data with shape (25, 20, 13) as mentioned in conversation
-    const int64_t num_route_lanes = 25;
-    const int64_t route_lane_len = 20;
-    const int64_t route_lane_features = 13;
+    // Create route lanes data using dimensions from dimensions.hpp
+    constexpr auto route_shape = autoware::diffusion_planner::ROUTE_LANES_SHAPE;
+    const int64_t num_route_lanes = route_shape[1];  // Shape is {1, 25, 20, 13}
+    const int64_t route_lane_len = route_shape[2];
+    const int64_t route_lane_features = route_shape[3];
 
     // Create route lanes tensor data
     std::vector<float> route_lanes_data(
