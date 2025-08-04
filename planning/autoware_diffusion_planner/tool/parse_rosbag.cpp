@@ -375,7 +375,12 @@ private:
     lanelet_converter_ = std::make_unique<autoware::diffusion_planner::LaneletConverter>(
       lanelet_map_ptr_, max_num_polyline, max_num_point, point_break_distance);
 
+    // Convert lane segments once during map loading (not per frame)
+    const int64_t points_per_segment = autoware::diffusion_planner::POINTS_PER_SEGMENT;
+    all_lane_segments_ = lanelet_converter_->convert_to_lane_segments(points_per_segment);
+
     std::cout << "Lanelet2 map loaded successfully!" << std::endl;
+    std::cout << "Converted " << all_lane_segments_.size() << " lane segments" << std::endl;
   }
 
   template <typename T>
@@ -488,21 +493,16 @@ private:
     const double ego_x = frame_data.kinematic_state.pose.pose.position.x;
     const double ego_y = frame_data.kinematic_state.pose.pose.position.y;
 
-    // Create all lane segments (like Python's vector_map.lane_segments.values())
-    std::vector<autoware::diffusion_planner::LaneSegment> all_lane_segments =
-      lanelet_converter_->convert_to_lane_segments(20);  // LANE_LEN = POINTS_PER_SEGMENT
-    saveLaneData(token, all_lane_segments, ego_x, ego_y);
+    // Use pre-computed lane segments (converted once during map loading)
+    saveLaneData(token, all_lane_segments_, ego_x, ego_y);
 
     // Create route-specific lane segments from route data
     std::vector<autoware::diffusion_planner::LaneSegment> route_lane_segments;
     if (!frame_data.route.segments.empty()) {
       // Extract route segments (like Python's target_segments extraction)
-      route_lane_segments = extractRouteLaneSegments(frame_data.route, all_lane_segments);
+      route_lane_segments = extractRouteLaneSegments(frame_data.route, all_lane_segments_);
     }
     saveRouteLanes(token, route_lane_segments, ego_x, ego_y);
-
-    std::cout << "Lane segments: " << all_lane_segments.size() << std::endl;
-    std::cout << "Route lane segments: " << route_lane_segments.size() << std::endl;
 
     // 4. Save other data
     saveStaticObjects(token);
@@ -745,6 +745,7 @@ private:
   lanelet::traffic_rules::TrafficRulesPtr traffic_rules_ptr_;
   lanelet::routing::RoutingGraphPtr routing_graph_ptr_;
   std::unique_ptr<autoware::diffusion_planner::LaneletConverter> lanelet_converter_;
+  std::vector<autoware::diffusion_planner::LaneSegment> all_lane_segments_;
 };
 
 void printUsage(const char * program_name)
