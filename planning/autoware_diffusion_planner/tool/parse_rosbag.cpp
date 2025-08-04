@@ -10,12 +10,14 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -154,13 +156,13 @@ public:
     // Process messages
     std::cout << "\nProcessing messages..." << std::endl;
 
-    // Storage for collected messages by type
-    std::vector<Odometry> kinematic_msgs;
-    std::vector<AccelWithCovarianceStamped> acceleration_msgs;
-    std::vector<TrackedObjects> tracking_msgs;
-    std::vector<TrafficLightGroupArray> traffic_msgs;
-    std::vector<LaneletRoute> route_msgs;
-    std::vector<TurnIndicatorsReport> turn_indicator_msgs;
+    // Storage for collected messages by type (using deque for efficient operations)
+    std::deque<Odometry> kinematic_msgs;
+    std::deque<AccelWithCovarianceStamped> acceleration_msgs;
+    std::deque<TrackedObjects> tracking_msgs;
+    std::deque<TrafficLightGroupArray> traffic_msgs;
+    std::deque<LaneletRoute> route_msgs;
+    std::deque<TurnIndicatorsReport> turn_indicator_msgs;
 
     while (reader_.has_next() && (config_.limit < 0 || processed_messages < config_.limit)) {
       auto bag_message = reader_.read_next();
@@ -256,12 +258,12 @@ private:
   }
 
   void processFramesWithTypedMessages(
-    const std::vector<Odometry> & kinematic_msgs,
-    const std::vector<AccelWithCovarianceStamped> & acceleration_msgs,
-    const std::vector<TrackedObjects> & tracking_msgs,
-    const std::vector<TrafficLightGroupArray> & traffic_msgs,
-    const std::vector<LaneletRoute> & route_msgs,
-    const std::vector<TurnIndicatorsReport> & turn_indicator_msgs)
+    const std::deque<Odometry> & kinematic_msgs,
+    const std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
+    const std::deque<TrackedObjects> & tracking_msgs,
+    const std::deque<TrafficLightGroupArray> & traffic_msgs,
+    const std::deque<LaneletRoute> & route_msgs,
+    const std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
   {
     std::cout << "\nMatching messages to create data list..." << std::endl;
 
@@ -276,55 +278,122 @@ private:
     processDataList(data_list);
   }
 
+  template <typename T>
+  std::optional<T> getNearestMessageWithPop(std::deque<T> & msgs, const rclcpp::Time & target_time)
+  {
+    if (msgs.empty()) return std::nullopt;
+
+    T best_msg = msgs.front();
+    int64_t min_diff =
+      std::abs(getMessageTimestamp(best_msg).nanoseconds() - target_time.nanoseconds());
+    size_t best_idx = 0;
+
+    // Find best match while checking time differences
+    for (size_t i = 1; i < msgs.size(); ++i) {
+      int64_t diff =
+        std::abs(getMessageTimestamp(msgs[i]).nanoseconds() - target_time.nanoseconds());
+      if (diff < min_diff) {
+        min_diff = diff;
+        best_msg = msgs[i];
+        best_idx = i;
+      } else {
+        break;  // Messages are usually in chronological order
+      }
+    }
+
+    // Check if time difference is acceptable (200ms like Python version)
+    if (min_diff > 200'000'000) {  // 200ms in nanoseconds
+      std::cout << "Time difference too large: " << min_diff / 1'000'000 << "ms" << std::endl;
+      return std::nullopt;
+    }
+
+    // Pop elements up to and including the found message
+    for (size_t i = 0; i <= best_idx; ++i) {
+      msgs.pop_front();
+    }
+
+    return best_msg;
+  }
+
   std::vector<FrameData> createDataList(
-    const std::vector<Odometry> & kinematic_msgs,
-    const std::vector<AccelWithCovarianceStamped> & acceleration_msgs,
-    const std::vector<TrackedObjects> & tracking_msgs,
-    const std::vector<TrafficLightGroupArray> & traffic_msgs,
-    const std::vector<LaneletRoute> & route_msgs,
-    const std::vector<TurnIndicatorsReport> & turn_indicator_msgs)
+    const std::deque<Odometry> & kinematic_msgs,
+    const std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
+    const std::deque<TrackedObjects> & tracking_msgs,
+    const std::deque<TrafficLightGroupArray> & traffic_msgs,
+    const std::deque<LaneletRoute> & route_msgs,
+    const std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
   {
     std::vector<FrameData> data_list;
 
+    // Create mutable deques for efficient slicing like Python version
+    std::deque<Odometry> kinematic_data = kinematic_msgs;
+    std::deque<AccelWithCovarianceStamped> acceleration_data = acceleration_msgs;
+    std::deque<TrafficLightGroupArray> traffic_data = traffic_msgs;
+    std::deque<LaneletRoute> route_data = route_msgs;
+    std::deque<TurnIndicatorsReport> turn_indicator_data = turn_indicator_msgs;
+
+    size_t n = tracking_msgs.size();
+
     // Use tracking messages as base timing (like Python version)
-    for (size_t i = 0; i < tracking_msgs.size(); ++i) {
+    for (size_t i = 0; i < n; ++i) {
+      const auto & tracking = tracking_msgs[i];
+      rclcpp::Time timestamp = rclcpp::Time(tracking.header.stamp);
+
+      bool ok = true;
       FrameData frame_data;
-      frame_data.timestamp = rclcpp::Time(tracking_msgs[i].header.stamp);
-      frame_data.tracked_objects = tracking_msgs[i];
+      frame_data.timestamp = timestamp;
+      frame_data.tracked_objects = tracking;
 
-      // Find closest messages by timestamp for each topic
-      if (!kinematic_msgs.empty()) {
-        size_t closest_idx = findClosestMessageByTime(kinematic_msgs, frame_data.timestamp);
-        if (closest_idx < kinematic_msgs.size()) {
-          frame_data.kinematic_state = kinematic_msgs[closest_idx];
+      // Find nearest messages with pop like Python version
+      if (!kinematic_data.empty()) {
+        auto result = getNearestMessageWithPop(kinematic_data, timestamp);
+        if (!result) {
+          std::cout << "Cannot find kinematic_state msg at frame " << i << std::endl;
+          ok = false;
+        } else {
+          frame_data.kinematic_state = *result;
         }
       }
 
-      if (!acceleration_msgs.empty()) {
-        size_t closest_idx = findClosestMessageByTime(acceleration_msgs, frame_data.timestamp);
-        if (closest_idx < acceleration_msgs.size()) {
-          frame_data.acceleration = acceleration_msgs[closest_idx];
+      if (ok && !acceleration_data.empty()) {
+        auto result = getNearestMessageWithPop(acceleration_data, timestamp);
+        if (!result) {
+          std::cout << "Cannot find acceleration msg at frame " << i << std::endl;
+          ok = false;
+        } else {
+          frame_data.acceleration = *result;
         }
       }
 
-      if (!route_msgs.empty()) {
-        size_t closest_idx = findClosestMessageByTime(route_msgs, frame_data.timestamp);
-        if (closest_idx < route_msgs.size()) {
-          frame_data.route = route_msgs[closest_idx];
+      if (ok && !traffic_data.empty()) {
+        auto result = getNearestMessageWithPop(traffic_data, timestamp);
+        if (result) {
+          frame_data.traffic_signals = *result;
         }
       }
 
-      if (!traffic_msgs.empty()) {
-        size_t closest_idx = findClosestMessageByTime(traffic_msgs, frame_data.timestamp);
-        if (closest_idx < traffic_msgs.size()) {
-          frame_data.traffic_signals = traffic_msgs[closest_idx];
+      if (ok && !route_data.empty()) {
+        auto result = getNearestMessageWithPop(route_data, timestamp);
+        if (result) {
+          frame_data.route = *result;
         }
       }
 
-      if (!turn_indicator_msgs.empty()) {
-        size_t closest_idx = findClosestMessageByTime(turn_indicator_msgs, frame_data.timestamp);
-        if (closest_idx < turn_indicator_msgs.size()) {
-          frame_data.turn_indicator = turn_indicator_msgs[closest_idx];
+      if (ok && !turn_indicator_data.empty()) {
+        auto result = getNearestMessageWithPop(turn_indicator_data, timestamp);
+        if (result) {
+          frame_data.turn_indicator = *result;
+        }
+      }
+
+      if (!ok) {
+        if (data_list.empty()) {
+          std::cout << "Skip frame " << i << "/" << n << " (at beginning)" << std::endl;
+          continue;
+        } else {
+          std::cout << "Finish at frame " << i << "/" << n << " (missing msg in middle)"
+                    << std::endl;
+          break;
         }
       }
 
