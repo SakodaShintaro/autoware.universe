@@ -258,12 +258,12 @@ private:
   }
 
   void processFramesWithTypedMessages(
-    const std::deque<Odometry> & kinematic_msgs,
-    const std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
-    const std::deque<TrackedObjects> & tracking_msgs,
-    const std::deque<TrafficLightGroupArray> & traffic_msgs,
-    const std::deque<LaneletRoute> & route_msgs,
-    const std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
+    std::deque<Odometry> & kinematic_msgs,
+    std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
+    std::deque<TrackedObjects> & tracking_msgs,
+    std::deque<TrafficLightGroupArray> & traffic_msgs,
+    std::deque<LaneletRoute> & route_msgs,
+    std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
   {
     std::cout << "\nMatching messages to create data list..." << std::endl;
 
@@ -316,21 +316,16 @@ private:
   }
 
   std::vector<FrameData> createDataList(
-    const std::deque<Odometry> & kinematic_msgs,
-    const std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
-    const std::deque<TrackedObjects> & tracking_msgs,
-    const std::deque<TrafficLightGroupArray> & traffic_msgs,
-    const std::deque<LaneletRoute> & route_msgs,
-    const std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
+    std::deque<Odometry> & kinematic_msgs,
+    std::deque<AccelWithCovarianceStamped> & acceleration_msgs,
+    std::deque<TrackedObjects> & tracking_msgs,
+    std::deque<TrafficLightGroupArray> & traffic_msgs,
+    std::deque<LaneletRoute> & route_msgs,
+    std::deque<TurnIndicatorsReport> & turn_indicator_msgs)
   {
     std::vector<FrameData> data_list;
 
-    // Create mutable deques for efficient slicing like Python version
-    std::deque<Odometry> kinematic_data = kinematic_msgs;
-    std::deque<AccelWithCovarianceStamped> acceleration_data = acceleration_msgs;
-    std::deque<TrafficLightGroupArray> traffic_data = traffic_msgs;
-    std::deque<LaneletRoute> route_data = route_msgs;
-    std::deque<TurnIndicatorsReport> turn_indicator_data = turn_indicator_msgs;
+    // Use references directly - no need to copy
 
     size_t n = tracking_msgs.size();
 
@@ -345,8 +340,8 @@ private:
       frame_data.tracked_objects = tracking;
 
       // Find nearest messages with pop like Python version
-      if (!kinematic_data.empty()) {
-        auto result = getNearestMessageWithPop(kinematic_data, timestamp);
+      if (!kinematic_msgs.empty()) {
+        auto result = getNearestMessageWithPop(kinematic_msgs, timestamp);
         if (!result) {
           std::cout << "Cannot find kinematic_state msg at frame " << i << std::endl;
           ok = false;
@@ -355,8 +350,8 @@ private:
         }
       }
 
-      if (ok && !acceleration_data.empty()) {
-        auto result = getNearestMessageWithPop(acceleration_data, timestamp);
+      if (ok && !acceleration_msgs.empty()) {
+        auto result = getNearestMessageWithPop(acceleration_msgs, timestamp);
         if (!result) {
           std::cout << "Cannot find acceleration msg at frame " << i << std::endl;
           ok = false;
@@ -365,22 +360,22 @@ private:
         }
       }
 
-      if (ok && !traffic_data.empty()) {
-        auto result = getNearestMessageWithPop(traffic_data, timestamp);
+      if (ok && !traffic_msgs.empty()) {
+        auto result = getNearestMessageWithPop(traffic_msgs, timestamp);
         if (result) {
           frame_data.traffic_signals = *result;
         }
       }
 
-      if (ok && !route_data.empty()) {
-        auto result = getNearestMessageWithPop(route_data, timestamp);
+      if (ok && !route_msgs.empty()) {
+        auto result = getNearestMessageWithPop(route_msgs, timestamp);
         if (result) {
           frame_data.route = *result;
         }
       }
 
-      if (ok && !turn_indicator_data.empty()) {
-        auto result = getNearestMessageWithPop(turn_indicator_data, timestamp);
+      if (ok && !turn_indicator_msgs.empty()) {
+        auto result = getNearestMessageWithPop(turn_indicator_msgs, timestamp);
         if (result) {
           frame_data.turn_indicator = *result;
         }
