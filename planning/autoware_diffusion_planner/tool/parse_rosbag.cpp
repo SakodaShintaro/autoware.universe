@@ -249,8 +249,10 @@ private:
       map_bin_msg_, lanelet_map_ptr_, &traffic_rules_ptr_, &routing_graph_ptr_);
 
     // Create LaneletConverter instance
-    const size_t max_num_polyline = 70;  // Same as Python LANE_NUM
-    const size_t max_num_point = 20;     // Same as Python LANE_LEN
+    // Use dimensions from dimensions.hpp
+    constexpr auto lanes_shape = autoware::diffusion_planner::LANES_SHAPE;
+    const size_t max_num_polyline = lanes_shape[1];  // Shape is {1, 70, 20, 13}
+    const size_t max_num_point = lanes_shape[2];
     const double point_break_distance = 100.0;
     lanelet_converter_ = std::make_unique<autoware::diffusion_planner::LaneletConverter>(
       lanelet_map_ptr_, max_num_polyline, max_num_point, point_break_distance);
@@ -324,12 +326,12 @@ private:
 
     // Use references directly - no need to copy
 
-    size_t n = tracking_msgs.size();
+    const size_t n = tracking_msgs.size();
 
     // Use tracking messages as base timing (like Python version)
     for (size_t i = 0; i < n; ++i) {
       const auto & tracking = tracking_msgs[i];
-      rclcpp::Time timestamp = rclcpp::Time(tracking.header.stamp);
+      const rclcpp::Time timestamp = rclcpp::Time(tracking.header.stamp);
 
       bool ok = true;
       FrameData frame_data;
@@ -399,9 +401,11 @@ private:
   {
     std::cout << "\nProcessing data list..." << std::endl;
 
-    int64_t n = static_cast<int64_t>(data_list.size());
-    int64_t past_time_steps = 21;    // PAST_TIME_STEPS from Python
-    int64_t future_time_steps = 80;  // FUTURE_TIME_STEPS from Python
+    const int64_t n = static_cast<int64_t>(data_list.size());
+    // Use dimensions from dimensions.hpp
+    constexpr auto ego_history_shape = autoware::diffusion_planner::EGO_HISTORY_SHAPE;
+    const int64_t past_time_steps = ego_history_shape[1];                     // Shape is {1, 21, 4}
+    const int64_t future_time_steps = autoware::diffusion_planner::OUTPUT_T;  // 80
 
     if (n <= past_time_steps + future_time_steps) {
       std::cout << "Not enough frames for processing. Need at least "
@@ -472,9 +476,13 @@ private:
 
     std::cout << "Ego state dimensions: " << ego_array.size() << std::endl;
 
-    // 2. Process tracked objects
+    // 2. Process tracked objects using dimensions from dimensions.hpp
+    constexpr auto neighbor_shape = autoware::diffusion_planner::NEIGHBOR_SHAPE;
+    const int64_t neighbor_num = neighbor_shape[1];  // Shape is {1, 32, 21, 11}
+    const int64_t past_time_steps_neighbor = neighbor_shape[2];
+
     autoware::diffusion_planner::AgentData agent_data(
-      frame_data.tracked_objects, 32, 21);  // NEIGHBOR_NUM, PAST_TIME_STEPS
+      frame_data.tracked_objects, neighbor_num, past_time_steps_neighbor);
     saveAgentData(token, agent_data);
 
     std::cout << "Agent data size: " << agent_data.size() << std::endl;
@@ -521,7 +529,8 @@ private:
     // For now, we'll create a placeholder with the correct dimensions
     const int64_t num_agents = agent_data.num_agent();
     const int64_t time_length = agent_data.time_length();
-    const int64_t feature_dim = 11;  // Based on Python code: (32, 21, 11)
+    constexpr auto neighbor_shape = autoware::diffusion_planner::NEIGHBOR_SHAPE;
+    const int64_t feature_dim = neighbor_shape[3];  // Shape is {1, 32, 21, 11}
 
     // Create placeholder data with correct shape
     std::vector<float> agent_tensor_data(num_agents * time_length * feature_dim, 0.0f);
@@ -554,9 +563,11 @@ private:
     // Save lane data as NPY file
     std::string npy_filename = config_.save_dir + "/lanes_" + token + ".npy";
 
-    const int64_t max_lane_num = 70;      // LANE_NUM from Python code
-    const int64_t max_lane_len = 20;      // LANE_LEN from Python code
-    const int64_t lane_feature_dim = 13;  // Feature dimension for lanes
+    // Use dimensions from dimensions.hpp
+    constexpr auto lanes_shape = autoware::diffusion_planner::LANES_SHAPE;
+    const int64_t max_lane_num = lanes_shape[1];  // Shape is {1, 70, 20, 13}
+    const int64_t max_lane_len = lanes_shape[2];
+    const int64_t lane_feature_dim = lanes_shape[3];
 
     // Create lane tensor data with correct shape (70, 20, 13)
     std::vector<float> lane_tensor_data(max_lane_num * max_lane_len * lane_feature_dim, 0.0f);
