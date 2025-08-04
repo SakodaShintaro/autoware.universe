@@ -197,9 +197,6 @@ public:
     // Create output directory
     fs::create_directories(config_.save_dir);
 
-    // Save parsing results
-    saveParsingResults(topic_counts);
-
     std::cout << "\nCollected messages:" << std::endl;
     std::cout << "  Kinematic: " << kinematic_msgs.size() << std::endl;
     std::cout << "  Acceleration: " << acceleration_msgs.size() << std::endl;
@@ -504,7 +501,7 @@ private:
     int64_t turn_indicator_value = static_cast<int64_t>(frame_data.turn_indicator.report);
     saveTurnIndicator(token, turn_indicator_value);
 
-    // 6. Save kinematic info for debugging
+    // 6. Save kinematic info as JSON like Python version
     saveKinematicInfo(token, frame_data.kinematic_state);
 
     std::cout << "Created NPY files for token: " << token << std::endl;
@@ -542,18 +539,6 @@ private:
 
     std::cout << "  Saved neighbor_agents_past: " << npy_filename << " (shape: " << num_agents
               << ", " << time_length << ", " << feature_dim << ")" << std::endl;
-
-    // Also save info file
-    std::string info_filename = config_.save_dir + "/agent_data_" + token + ".txt";
-    std::ofstream file(info_filename);
-    if (file.is_open()) {
-      file << "Agent data for token: " << token << "\n";
-      file << "Number of agents: " << agent_data.num_agent() << "\n";
-      file << "Time length: " << agent_data.time_length() << "\n";
-      file << "Data size: " << agent_data.size() << "\n";
-      file << "NPY file: " << npy_filename << "\n";
-      file.close();
-    }
   }
 
   void saveLaneData(
@@ -598,21 +583,6 @@ private:
 
     std::cout << "  Saved lanes: " << npy_filename << " (shape: " << max_lane_num << ", "
               << max_lane_len << ", " << lane_feature_dim << ")" << std::endl;
-
-    // Also save info file
-    std::string info_filename = config_.save_dir + "/lane_data_" + token + ".txt";
-    std::ofstream file(info_filename);
-    if (file.is_open()) {
-      file << "Lane data for token: " << token << "\n";
-      file << "Number of lane segments: " << lane_segments.size() << "\n";
-      file << "NPY file: " << npy_filename << "\n";
-      for (size_t i = 0; i < std::min(lane_segments.size(), size_t(5)); ++i) {
-        const auto & segment = lane_segments[i];
-        file << "Segment " << i << " (ID: " << segment.id << "): " << segment.polyline.size()
-             << " points\n";
-      }
-      file.close();
-    }
   }
 
   void saveStaticObjects(const std::string & token)
@@ -694,7 +664,7 @@ private:
 
   void saveKinematicInfo(const std::string & token, const Odometry & kinematic_msg)
   {
-    std::string filename = config_.save_dir + "/kinematic_" + token + ".json";
+    std::string filename = config_.save_dir + "/" + token + ".json";
     std::ofstream file(filename);
     if (file.is_open()) {
       file << "{\n";
@@ -707,40 +677,9 @@ private:
       file << "  \"qx\": " << kinematic_msg.pose.pose.orientation.x << ",\n";
       file << "  \"qy\": " << kinematic_msg.pose.pose.orientation.y << ",\n";
       file << "  \"qz\": " << kinematic_msg.pose.pose.orientation.z << ",\n";
-      file << "  \"qw\": " << kinematic_msg.pose.pose.orientation.w << ",\n";
-      file << "  \"vx\": " << kinematic_msg.twist.twist.linear.x << ",\n";
-      file << "  \"vy\": " << kinematic_msg.twist.twist.linear.y << ",\n";
-      file << "  \"vz\": " << kinematic_msg.twist.twist.linear.z << "\n";
+      file << "  \"qw\": " << kinematic_msg.pose.pose.orientation.w << "\n";
       file << "}\n";
       file.close();
-    }
-  }
-
-  void saveParsingResults(const std::map<std::string, int64_t> & topic_counts)
-  {
-    std::string results_file = config_.save_dir + "/parsing_results.txt";
-    std::ofstream ofs(results_file);
-
-    if (ofs.is_open()) {
-      ofs << "Rosbag parsing results\n";
-      ofs << "======================\n";
-      ofs << "Source rosbag: " << config_.rosbag_path << "\n";
-      ofs << "Vector map: " << config_.vector_map_path << "\n";
-      ofs << "Output directory: " << config_.save_dir << "\n";
-      ofs << "Configuration:\n";
-      ofs << "  Step: " << config_.step << "\n";
-      ofs << "  Limit: " << config_.limit << "\n";
-      ofs << "  Min frames: " << config_.min_frames << "\n";
-      ofs << "  Search nearest route: " << (config_.search_nearest_route ? "true" : "false")
-          << "\n";
-      ofs << "\nMessage counts:\n";
-
-      for (const auto & [topic, count] : topic_counts) {
-        ofs << topic << ": " << count << " messages\n";
-      }
-
-      ofs.close();
-      std::cout << "Results saved to: " << results_file << std::endl;
     }
   }
 
