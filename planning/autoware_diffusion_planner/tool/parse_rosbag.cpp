@@ -509,7 +509,7 @@ private:
 
   void saveEgoCurrentState(const std::string & token, const std::vector<float> & ego_array)
   {
-    std::string filename = config_.save_dir + "/ego_current_state_" + token + ".npy";
+    const std::string filename = config_.save_dir + "/ego_current_state_" + token + ".npy";
     aoba::SaveArrayAsNumpy(filename, ego_array);
     std::cout << "  Saved ego_current_state: " << filename << " (shape: " << ego_array.size() << ")"
               << std::endl;
@@ -519,18 +519,16 @@ private:
     const std::string & token, const autoware::diffusion_planner::AgentData & agent_data)
   {
     // Save agent data as NPY file
-    std::string npy_filename = config_.save_dir + "/neighbor_agents_past_" + token + ".npy";
+    const std::string npy_filename = config_.save_dir + "/neighbor_agents_past_" + token + ".npy";
 
     // Get the tensor data from AgentData
-    // The AgentData should have methods to get the tensor data
-    // For now, we'll create a placeholder with the correct dimensions
     const int64_t num_agents = agent_data.num_agent();
     const int64_t time_length = agent_data.time_length();
     constexpr auto neighbor_shape = autoware::diffusion_planner::NEIGHBOR_SHAPE;
     const int64_t feature_dim = neighbor_shape[3];  // Shape is {1, 32, 21, 11}
 
-    // Create placeholder data with correct shape
-    std::vector<float> agent_tensor_data(num_agents * time_length * feature_dim, 0.0f);
+    // Get actual tensor data from AgentData
+    const std::vector<float> agent_tensor_data = agent_data.as_vector();
 
     // Save as 3D array: (num_agents, time_length, feature_dim)
     const int shape[3] = {
@@ -546,7 +544,7 @@ private:
     const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
   {
     // Save lane data as NPY file
-    std::string npy_filename = config_.save_dir + "/lanes_" + token + ".npy";
+    const std::string npy_filename = config_.save_dir + "/lanes_" + token + ".npy";
 
     // Use dimensions from dimensions.hpp
     constexpr auto lanes_shape = autoware::diffusion_planner::LANES_SHAPE;
@@ -587,7 +585,7 @@ private:
 
   void saveStaticObjects(const std::string & token)
   {
-    std::string filename = config_.save_dir + "/static_objects_" + token + ".npy";
+    const std::string filename = config_.save_dir + "/static_objects_" + token + ".npy";
 
     // Create static objects data using dimensions from dimensions.hpp
     constexpr auto static_shape = autoware::diffusion_planner::STATIC_OBJECTS_SHAPE;
@@ -609,7 +607,7 @@ private:
     const std::string & token,
     const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
   {
-    std::string filename = config_.save_dir + "/route_lanes_" + token + ".npy";
+    const std::string filename = config_.save_dir + "/route_lanes_" + token + ".npy";
     // Create route lanes data using dimensions from dimensions.hpp
     constexpr auto route_shape = autoware::diffusion_planner::ROUTE_LANES_SHAPE;
     const int64_t num_route_lanes = route_shape[1];  // Shape is {1, 25, 20, 13}
@@ -651,7 +649,7 @@ private:
 
   void saveTurnIndicator(const std::string & token, int64_t turn_indicator_value)
   {
-    std::string filename = config_.save_dir + "/turn_indicator_" + token + ".npy";
+    const std::string filename = config_.save_dir + "/turn_indicator_" + token + ".npy";
 
     // Create turn indicator data with shape (1,) as mentioned in conversation
     std::vector<float> turn_indicator_data = {static_cast<float>(turn_indicator_value)};
@@ -664,7 +662,7 @@ private:
 
   void saveKinematicInfo(const std::string & token, const Odometry & kinematic_msg)
   {
-    std::string filename = config_.save_dir + "/" + token + ".json";
+    const std::string filename = config_.save_dir + "/" + token + ".json";
     std::ofstream file(filename);
     if (file.is_open()) {
       file << "{\n";
