@@ -263,30 +263,36 @@ private:
     const std::vector<LaneletRoute> & route_msgs,
     const std::vector<TurnIndicatorsReport> & turn_indicator_msgs)
   {
-    std::cout << "\nProcessing frames with synchronization..." << std::endl;
+    std::cout << "\nMatching messages to create data list..." << std::endl;
+
+    // First, match all messages to create data_list like Python version
+    std::vector<FrameData> data_list = createDataList(
+      kinematic_msgs, acceleration_msgs, tracking_msgs, traffic_msgs, route_msgs,
+      turn_indicator_msgs);
+
+    std::cout << "Created data list with " << data_list.size() << " frames" << std::endl;
+
+    // Now process the data_list like Python version
+    processDataList(data_list);
+  }
+
+  std::vector<FrameData> createDataList(
+    const std::vector<Odometry> & kinematic_msgs,
+    const std::vector<AccelWithCovarianceStamped> & acceleration_msgs,
+    const std::vector<TrackedObjects> & tracking_msgs,
+    const std::vector<TrafficLightGroupArray> & traffic_msgs,
+    const std::vector<LaneletRoute> & route_msgs,
+    const std::vector<TurnIndicatorsReport> & turn_indicator_msgs)
+  {
+    std::vector<FrameData> data_list;
 
     // Use tracking messages as base timing (like Python version)
-    int64_t total_frames = std::min(
-      static_cast<int64_t>(tracking_msgs.size()),
-      config_.limit > 0 ? config_.limit : static_cast<int64_t>(10));
-
-    std::cout << "Processing " << total_frames << " frames..." << std::endl;
-
-    for (int64_t frame_idx = 0; frame_idx < total_frames; frame_idx += config_.step) {
-      // Generate token (sequence_id + frame_id)
-      std::ostringstream oss;
-      oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << frame_idx;
-      std::string token = oss.str();
-
-      // Create FrameData and synchronize messages like Python version
+    for (size_t i = 0; i < tracking_msgs.size(); ++i) {
       FrameData frame_data;
-      frame_data.timestamp = rclcpp::Time(tracking_msgs[frame_idx].header.stamp);
+      frame_data.timestamp = rclcpp::Time(tracking_msgs[i].header.stamp);
+      frame_data.tracked_objects = tracking_msgs[i];
 
       // Find closest messages by timestamp for each topic
-      if (!tracking_msgs.empty() && frame_idx < static_cast<int64_t>(tracking_msgs.size())) {
-        frame_data.tracked_objects = tracking_msgs[frame_idx];
-      }
-
       if (!kinematic_msgs.empty()) {
         size_t closest_idx = findClosestMessageByTime(kinematic_msgs, frame_data.timestamp);
         if (closest_idx < kinematic_msgs.size()) {
@@ -322,15 +328,48 @@ private:
         }
       }
 
-      // Create NPY files using synchronized FrameData
-      createNPYFiles(token, frame_data);
+      data_list.push_back(frame_data);
+    }
 
-      if (frame_idx % 100 == 0) {
-        std::cout << "Processed frame " << frame_idx << "/" << total_frames << std::endl;
+    return data_list;
+  }
+
+  void processDataList(const std::vector<FrameData> & data_list)
+  {
+    std::cout << "\nProcessing data list..." << std::endl;
+
+    int64_t n = static_cast<int64_t>(data_list.size());
+    int64_t past_time_steps = 21;    // PAST_TIME_STEPS from Python
+    int64_t future_time_steps = 80;  // FUTURE_TIME_STEPS from Python
+
+    if (n <= past_time_steps + future_time_steps) {
+      std::cout << "Not enough frames for processing. Need at least "
+                << (past_time_steps + future_time_steps) << " frames, got " << n << std::endl;
+      return;
+    }
+
+    int64_t total_frames = (n - past_time_steps - future_time_steps);
+    if (config_.limit > 0) {
+      total_frames = std::min(total_frames, config_.limit);
+    }
+
+    std::cout << "Processing " << total_frames << " frames..." << std::endl;
+
+    for (int64_t i = past_time_steps; i < past_time_steps + total_frames; i += config_.step) {
+      // Generate token (sequence_id + frame_id)
+      std::ostringstream oss;
+      oss << std::setfill('0') << std::setw(8) << 0 << std::setw(8) << i;
+      std::string token = oss.str();
+
+      // Create NPY files using FrameData from data_list
+      createNPYFiles(token, data_list[i]);
+
+      if (i % 100 == 0) {
+        std::cout << "Processed frame " << i << "/" << total_frames << std::endl;
       }
     }
 
-    std::cout << "Frame processing with synchronization completed!" << std::endl;
+    std::cout << "Data list processing completed!" << std::endl;
   }
 
   // Helper function to get timestamp from message with header
