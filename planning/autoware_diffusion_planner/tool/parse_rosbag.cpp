@@ -454,28 +454,6 @@ private:
     return rclcpp::Time(msg.stamp);
   }
 
-  // Template version for messages with header
-  template <typename T>
-  size_t findClosestMessageByTime(const std::vector<T> & msgs, const rclcpp::Time & target_time)
-  {
-    if (msgs.empty()) return 0;
-
-    size_t closest_idx = 0;
-    int64_t min_diff =
-      std::abs(getMessageTimestamp(msgs[0]).nanoseconds() - target_time.nanoseconds());
-
-    for (size_t i = 1; i < msgs.size(); ++i) {
-      int64_t diff =
-        std::abs(getMessageTimestamp(msgs[i]).nanoseconds() - target_time.nanoseconds());
-      if (diff < min_diff) {
-        min_diff = diff;
-        closest_idx = i;
-      }
-    }
-
-    return closest_idx;
-  }
-
   void createNPYFiles(const std::string & token, const FrameData & frame_data)
   {
     std::cout << "Creating NPY files for token: " << token << std::endl;
