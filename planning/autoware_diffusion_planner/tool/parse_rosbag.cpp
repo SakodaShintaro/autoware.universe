@@ -1,9 +1,9 @@
 #include <rclcpp/rclcpp.hpp>
 #include <rclcpp/serialization.hpp>
-#include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_cpp/converter_options.hpp>
-#include <rosbag2_storage/storage_options.hpp>
+#include <rosbag2_cpp/readers/sequential_reader.hpp>
 #include <rosbag2_storage/storage_filter.hpp>
+#include <rosbag2_storage/storage_options.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -32,6 +32,22 @@
 
 #include <tf2/LinearMath/Matrix3x3.h>
 #include <tf2/LinearMath/Quaternion.h>
+
+// Autoware diffusion planner headers
+#include <autoware/diffusion_planner/conversion/agent.hpp>
+#include <autoware/diffusion_planner/conversion/ego.hpp>
+#include <autoware/diffusion_planner/conversion/lanelet.hpp>
+#include <autoware/diffusion_planner/preprocessing/lane_segments.hpp>
+#include <autoware/diffusion_planner/preprocessing/traffic_signals.hpp>
+#include <autoware/diffusion_planner/utils/utils.hpp>
+
+// Additional includes for Lanelet2 and test utilities
+#include <autoware_lanelet2_extension/utility/message_conversion.hpp>
+#include <autoware_test_utils/autoware_test_utils.hpp>
+
+#include <lanelet2_core/LaneletMap.h>
+#include <lanelet2_routing/RoutingGraph.h>
+#include <lanelet2_traffic_rules/TrafficRulesFactory.h>
 
 namespace fs = std::filesystem;
 
@@ -76,6 +92,9 @@ public:
     storage_options_.storage_id = "sqlite3";
     converter_options_.input_serialization_format = "cdr";
     converter_options_.output_serialization_format = "cdr";
+
+    // Initialize Lanelet2 map
+    initializeLaneletMap();
   }
 
   bool parseRosbag()
@@ -174,6 +193,40 @@ public:
   }
 
 private:
+  void initializeLaneletMap()
+  {
+    try {
+      std::cout << "Loading Lanelet2 map from: " << config_.vector_map_path << std::endl;
+
+      // Load map using test utilities (similar to lanelet_integration_test.cpp)
+      if (config_.vector_map_path.find(".osm") != std::string::npos) {
+        // OSM file
+        map_bin_msg_ = autoware::test_utils::make_map_bin_msg(config_.vector_map_path, 1.0);
+      } else {
+        std::cerr << "Unsupported map format. Expected .osm file." << std::endl;
+        return;
+      }
+
+      // Convert HADMapBin to lanelet map
+      lanelet_map_ptr_ = std::make_shared<lanelet::LaneletMap>();
+      lanelet::utils::conversion::fromBinMsg(
+        map_bin_msg_, lanelet_map_ptr_, &traffic_rules_ptr_, &routing_graph_ptr_);
+
+      // Create LaneletConverter instance
+      const size_t max_num_polyline = 70;  // Same as Python LANE_NUM
+      const size_t max_num_point = 20;     // Same as Python LANE_LEN
+      const double point_break_distance = 100.0;
+      lanelet_converter_ = std::make_unique<autoware::diffusion_planner::LaneletConverter>(
+        lanelet_map_ptr_, max_num_polyline, max_num_point, point_break_distance);
+
+      std::cout << "Lanelet2 map loaded successfully!" << std::endl;
+
+    } catch (const std::exception & e) {
+      std::cerr << "Error loading Lanelet2 map: " << e.what() << std::endl;
+      // Continue without map for now
+    }
+  }
+
   void processMessages(
     const std::map<std::string, std::vector<rosbag2_storage::SerializedBagMessageSharedPtr>> &
       topic_messages)
@@ -200,9 +253,7 @@ private:
     std::cout << "  Turn indicator: " << turn_indicator_msgs.size() << std::endl;
 
     // For demonstration, process a few sample frames
-    processSampleFrames(
-      kinematic_msgs, acceleration_msgs, tracking_msgs, traffic_msgs, route_msgs,
-      turn_indicator_msgs);
+    processSampleFrames(kinematic_msgs, tracking_msgs);
   }
 
   std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> getTopicMessages(
@@ -219,11 +270,7 @@ private:
 
   void processSampleFrames(
     const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & kinematic_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & /* acceleration_msgs */,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & tracking_msgs,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & /* traffic_msgs */,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & /* route_msgs */,
-    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & /* turn_indicator_msgs */)
+    const std::vector<rosbag2_storage::SerializedBagMessageSharedPtr> & tracking_msgs)
   {
     std::cout << "\nProcessing sample frames..." << std::endl;
 
@@ -241,9 +288,11 @@ private:
         // Deserialize sample messages for demonstration
         if (i < static_cast<int64_t>(kinematic_msgs.size())) {
           auto kinematic_msg = deserializeMessage<nav_msgs::msg::Odometry>(kinematic_msgs[i]);
+          auto tracking_msg =
+            deserializeMessage<autoware_perception_msgs::msg::TrackedObjects>(tracking_msgs[i]);
 
-          // Create sample NPZ data structure file
-          createSampleNPZFile(token, kinematic_msg);
+          // Create NPY files
+          createNPYFiles(token, kinematic_msg, tracking_msg);
         }
 
       } catch (const std::exception & e) {
@@ -259,54 +308,129 @@ private:
     std::cout << "Sample frame processing completed!" << std::endl;
   }
 
-  void createSampleNPZFile(const std::string & token, const nav_msgs::msg::Odometry & kinematic_msg)
+  void createNPYFiles(
+    const std::string & token, const nav_msgs::msg::Odometry & kinematic_msg,
+    const autoware_perception_msgs::msg::TrackedObjects & tracked_objects_msg)
   {
-    std::string npz_info_file = config_.save_dir + "/sample_" + token + ".npz.txt";
-    std::string json_file = config_.save_dir + "/sample_" + token + ".json";
+    std::cout << "Creating NPY files for token: " << token << std::endl;
 
-    // Create NPZ structure file
-    std::ofstream npz_info(npz_info_file);
-    if (npz_info.is_open()) {
-      npz_info << "NPZ file structure for token: " << token << "\n";
-      npz_info << "=================================\n";
-      npz_info << "map_name: " << fs::path(config_.rosbag_path).stem().string() << "\n";
-      npz_info << "token: " << token << "\n";
-      npz_info << "ego_agent_past: (21, 3) - Past trajectory of ego vehicle\n";
-      npz_info << "ego_current_state: (10,) - Current state [x, y, heading_cos, heading_sin, vx, "
-                  "vy, ax, ay, curvature, wheel_base]\n";
-      npz_info << "ego_agent_future: (80, 3) - Future trajectory of ego vehicle\n";
-      npz_info << "neighbor_agents_past: (32, 21, 11) - Past states of neighboring agents\n";
-      npz_info
-        << "neighbor_agents_future: (32, 80, 3) - Future trajectories of neighboring agents\n";
-      npz_info << "static_objects: (5, 10) - Static objects in the scene\n";
-      npz_info << "lanes: (70, 20, 13) - Lane information\n";
-      npz_info << "lanes_speed_limit: (70, 1) - Speed limits for lanes\n";
-      npz_info
-        << "lanes_has_speed_limit: (70, 1) - Boolean array indicating if lane has speed limit\n";
-      npz_info << "route_lanes: (25, 20, 13) - Route lane information\n";
-      npz_info << "route_lanes_speed_limit: (25, 1) - Speed limits for route lanes\n";
-      npz_info << "route_lanes_has_speed_limit: (25, 1) - Boolean array for route speed limits\n";
-      npz_info << "turn_indicator: (1,) - Turn indicator state\n";
-      npz_info << "goal_pose: (3,) - Relative goal pose [x, y, yaw]\n";
-      npz_info.close();
+    try {
+      // 1. Create ego state using actual diffusion planner functions
+      const double wheel_base = 2.79;  // Same as Python version
+      geometry_msgs::msg::AccelWithCovarianceStamped dummy_accel;
+      dummy_accel.accel.accel.linear.x = 0.0;
+      dummy_accel.accel.accel.linear.y = 0.0;
+
+      autoware::diffusion_planner::EgoState ego_state(kinematic_msg, dummy_accel, wheel_base);
+      auto ego_array = ego_state.as_array();
+
+      // 2. Process tracked objects
+      autoware::diffusion_planner::AgentData agent_data(
+        tracked_objects_msg, 32, 21);  // NEIGHBOR_NUM, PAST_TIME_STEPS
+
+      // 3. Create lane segments if lanelet converter is available
+      std::vector<autoware::diffusion_planner::LaneSegment> lane_segments;
+      if (lanelet_converter_) {
+        lane_segments = lanelet_converter_->convert_to_lane_segments(20);  // LANE_LEN
+      }
+
+      std::cout << "Ego state dimensions: " << ego_array.size() << std::endl;
+      std::cout << "Agent data size: " << agent_data.size() << std::endl;
+      std::cout << "Lane segments: " << lane_segments.size() << std::endl;
+
+      // Save NPY files
+      saveEgoCurrentState(token, ego_array);
+      saveAgentData(token, agent_data);
+      saveLaneData(token, lane_segments);
+      saveKinematicInfo(token, kinematic_msg);
+
+      std::cout << "Created NPY files for token: " << token << std::endl;
+
+    } catch (const std::exception & e) {
+      std::cerr << "Error creating NPY files for token " << token << ": " << e.what() << std::endl;
     }
+  }
 
-    // Create JSON file with pose information from actual kinematic data
-    std::ofstream json_out(json_file);
-    if (json_out.is_open()) {
-      json_out << "{\n";
-      json_out << "  \"timestamp\": "
-               << kinematic_msg.header.stamp.sec * 1000000000LL + kinematic_msg.header.stamp.nanosec
-               << ",\n";
-      json_out << "  \"x\": " << kinematic_msg.pose.pose.position.x << ",\n";
-      json_out << "  \"y\": " << kinematic_msg.pose.pose.position.y << ",\n";
-      json_out << "  \"z\": " << kinematic_msg.pose.pose.position.z << ",\n";
-      json_out << "  \"qx\": " << kinematic_msg.pose.pose.orientation.x << ",\n";
-      json_out << "  \"qy\": " << kinematic_msg.pose.pose.orientation.y << ",\n";
-      json_out << "  \"qz\": " << kinematic_msg.pose.pose.orientation.z << ",\n";
-      json_out << "  \"qw\": " << kinematic_msg.pose.pose.orientation.w << "\n";
-      json_out << "}\n";
-      json_out.close();
+  void saveEgoCurrentState(const std::string & token, const std::vector<float> & ego_array)
+  {
+    std::string filename = config_.save_dir + "/ego_current_state_" + token + ".npy";
+    std::ofstream file(filename, std::ios::binary);
+    if (file.is_open()) {
+      // Simple NPY format header (magic + version + header length + header + data)
+      file.write("\x93NUMPY", 6);  // Magic number
+      file.write("\x01\x00", 2);   // Version 1.0
+
+      std::string header = "{'descr': '<f4', 'fortran_order': False, 'shape': (" +
+                           std::to_string(ego_array.size()) + ",), }";
+
+      // Pad header to 16-byte boundary
+      while ((header.size() + 10) % 16 != 0) {
+        header += " ";
+      }
+      header += "\n";
+
+      uint16_t header_len = header.size();
+      file.write(reinterpret_cast<const char *>(&header_len), 2);
+      file.write(header.c_str(), header.size());
+      file.write(
+        reinterpret_cast<const char *>(ego_array.data()), ego_array.size() * sizeof(float));
+      file.close();
+    }
+  }
+
+  void saveAgentData(
+    const std::string & token, const autoware::diffusion_planner::AgentData & agent_data)
+  {
+    std::string filename = config_.save_dir + "/agent_data_" + token + ".txt";
+    std::ofstream file(filename);
+    if (file.is_open()) {
+      file << "Agent data for token: " << token << "\n";
+      file << "Number of agents: " << agent_data.num_agent() << "\n";
+      file << "Time length: " << agent_data.time_length() << "\n";
+      file << "Data size: " << agent_data.size() << "\n";
+      file.close();
+    }
+  }
+
+  void saveLaneData(
+    const std::string & token,
+    const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
+  {
+    std::string filename = config_.save_dir + "/lane_data_" + token + ".txt";
+    std::ofstream file(filename);
+    if (file.is_open()) {
+      file << "Lane data for token: " << token << "\n";
+      file << "Number of lane segments: " << lane_segments.size() << "\n";
+      for (size_t i = 0; i < std::min(lane_segments.size(), size_t(5)); ++i) {
+        const auto & segment = lane_segments[i];
+        file << "Segment " << i << " (ID: " << segment.id << "): " << segment.polyline.size()
+             << " points\n";
+      }
+      file.close();
+    }
+  }
+
+  void saveKinematicInfo(const std::string & token, const nav_msgs::msg::Odometry & kinematic_msg)
+  {
+    std::string filename = config_.save_dir + "/kinematic_" + token + ".json";
+    std::ofstream file(filename);
+    if (file.is_open()) {
+      file << "{\n";
+      file << "  \"timestamp\": "
+           << kinematic_msg.header.stamp.sec * 1000000000LL + kinematic_msg.header.stamp.nanosec
+           << ",\n";
+      file << "  \"x\": " << kinematic_msg.pose.pose.position.x << ",\n";
+      file << "  \"y\": " << kinematic_msg.pose.pose.position.y << ",\n";
+      file << "  \"z\": " << kinematic_msg.pose.pose.position.z << ",\n";
+      file << "  \"qx\": " << kinematic_msg.pose.pose.orientation.x << ",\n";
+      file << "  \"qy\": " << kinematic_msg.pose.pose.orientation.y << ",\n";
+      file << "  \"qz\": " << kinematic_msg.pose.pose.orientation.z << ",\n";
+      file << "  \"qw\": " << kinematic_msg.pose.pose.orientation.w << ",\n";
+      file << "  \"vx\": " << kinematic_msg.twist.twist.linear.x << ",\n";
+      file << "  \"vy\": " << kinematic_msg.twist.twist.linear.y << ",\n";
+      file << "  \"vz\": " << kinematic_msg.twist.twist.linear.z << "\n";
+      file << "}\n";
+      file.close();
     }
   }
 
@@ -343,6 +467,13 @@ private:
   rosbag2_cpp::readers::SequentialReader reader_;
   rosbag2_storage::StorageOptions storage_options_;
   rosbag2_cpp::ConverterOptions converter_options_;
+
+  // Lanelet2 map processing
+  autoware_map_msgs::msg::LaneletMapBin map_bin_msg_;
+  std::shared_ptr<lanelet::LaneletMap> lanelet_map_ptr_;
+  lanelet::traffic_rules::TrafficRulesPtr traffic_rules_ptr_;
+  lanelet::routing::RoutingGraphPtr routing_graph_ptr_;
+  std::unique_ptr<autoware::diffusion_planner::LaneletConverter> lanelet_converter_;
 };
 
 void printUsage(const char * program_name)
