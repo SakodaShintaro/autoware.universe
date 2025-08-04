@@ -21,6 +21,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 // Message types
@@ -414,6 +415,31 @@ private:
     return best_msg;
   }
 
+  std::vector<autoware::diffusion_planner::LaneSegment> extractRouteLaneSegments(
+    const LaneletRoute & route,
+    const std::vector<autoware::diffusion_planner::LaneSegment> & all_lane_segments)
+  {
+    std::vector<autoware::diffusion_planner::LaneSegment> route_segments;
+
+    // Create a map for quick lookup of lane segments by ID
+    std::unordered_map<int64_t, const autoware::diffusion_planner::LaneSegment *> segment_map;
+    for (const auto & segment : all_lane_segments) {
+      segment_map[segment.id] = &segment;
+    }
+
+    // Extract route segments like Python version:
+    // vector_map.lane_segments[segment.preferred_primitive.id]
+    for (const auto & route_segment : route.segments) {
+      const int64_t lanelet_id = route_segment.preferred_primitive.id;
+      auto it = segment_map.find(lanelet_id);
+      if (it != segment_map.end()) {
+        route_segments.push_back(*it->second);
+      }
+    }
+
+    return route_segments;
+  }
+
   // Helper function to get timestamp from message with header
   template <typename T>
   rclcpp::Time getMessageTimestamp(const T & msg)
@@ -457,14 +483,27 @@ private:
 
     std::cout << "Agent data size: " << agent_data.size() << std::endl;
 
-    // 3. Create lane segments if lanelet converter is available
-    std::vector<autoware::diffusion_planner::LaneSegment> lane_segments;
+    // 3. Create lane segments and route lanes if lanelet converter is available
     if (lanelet_converter_) {
-      lane_segments = lanelet_converter_->convert_to_lane_segments(20);  // LANE_LEN
-      saveLaneData(token, lane_segments);
-      saveRouteLanes(token, lane_segments);  // Use lane_segments as placeholder for route
+      // Get ego vehicle position for lane processing
+      const double ego_x = frame_data.kinematic_state.pose.pose.position.x;
+      const double ego_y = frame_data.kinematic_state.pose.pose.position.y;
 
-      std::cout << "Lane segments: " << lane_segments.size() << std::endl;
+      // Create all lane segments (like Python's vector_map.lane_segments.values())
+      std::vector<autoware::diffusion_planner::LaneSegment> all_lane_segments =
+        lanelet_converter_->convert_to_lane_segments(20);  // LANE_LEN = POINTS_PER_SEGMENT
+      saveLaneData(token, all_lane_segments, ego_x, ego_y);
+
+      // Create route-specific lane segments from route data
+      std::vector<autoware::diffusion_planner::LaneSegment> route_lane_segments;
+      if (!frame_data.route.segments.empty()) {
+        // Extract route segments (like Python's target_segments extraction)
+        route_lane_segments = extractRouteLaneSegments(frame_data.route, all_lane_segments);
+      }
+      saveRouteLanes(token, route_lane_segments, ego_x, ego_y);
+
+      std::cout << "Lane segments: " << all_lane_segments.size() << std::endl;
+      std::cout << "Route lane segments: " << route_lane_segments.size() << std::endl;
     }
 
     // 4. Save other data
@@ -514,7 +553,8 @@ private:
 
   void saveLaneData(
     const std::string & token,
-    const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
+    const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments, double ego_x,
+    double ego_y)
   {
     // Save lane data as NPY file
     const std::string npy_filename = config_.save_dir + "/lanes_" + token + ".npy";
@@ -525,25 +565,53 @@ private:
     const int64_t max_lane_len = lanes_shape[2];
     const int64_t lane_feature_dim = lanes_shape[3];
 
+    // Filter and sort lane segments by distance to ego (like Python's do_sort=True)
+    std::vector<std::pair<double, const autoware::diffusion_planner::LaneSegment *>>
+      segments_with_distance;
+    const double mask_range = 100.0;  // Same as Python version
+
+    for (const auto & segment : lane_segments) {
+      if (!segment.polyline.waypoints().empty()) {
+        const auto & first_point = segment.polyline.waypoints()[0];
+        double dx = first_point.x() - ego_x;
+        double dy = first_point.y() - ego_y;
+        double distance = std::sqrt(dx * dx + dy * dy);
+
+        if (distance <= mask_range) {
+          segments_with_distance.emplace_back(distance, &segment);
+        }
+      }
+    }
+
+    // Sort by distance (like Python's do_sort=True)
+    std::sort(segments_with_distance.begin(), segments_with_distance.end());
+
     // Create lane tensor data with correct shape (70, 20, 13)
     std::vector<float> lane_tensor_data(max_lane_num * max_lane_len * lane_feature_dim, 0.0f);
 
-    // Fill with actual lane data (simplified version)
-    for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(max_lane_num)); ++i) {
-      const autoware::diffusion_planner::LaneSegment & segment = lane_segments[i];
+    // Fill with sorted and filtered lane data
+    const size_t num_segments_to_use =
+      std::min(segments_with_distance.size(), static_cast<size_t>(max_lane_num));
+    for (size_t i = 0; i < num_segments_to_use; ++i) {
+      const autoware::diffusion_planner::LaneSegment & segment = *segments_with_distance[i].second;
       const std::vector<autoware::diffusion_planner::LanePoint> & waypoints =
         segment.polyline.waypoints();
 
-      for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(max_lane_len)); ++j) {
+      const size_t num_points_to_use =
+        std::min(waypoints.size(), static_cast<size_t>(max_lane_len));
+      for (size_t j = 0; j < num_points_to_use; ++j) {
         const autoware::diffusion_planner::LanePoint & point = waypoints[j];
-        size_t base_idx = i * max_lane_len * lane_feature_dim + j * lane_feature_dim;
+        const size_t base_idx = i * max_lane_len * lane_feature_dim + j * lane_feature_dim;
 
-        if (base_idx + 2 < lane_tensor_data.size()) {
-          lane_tensor_data[base_idx + 0] = point.x();  // x
-          lane_tensor_data[base_idx + 1] = point.y();  // y
-          lane_tensor_data[base_idx + 2] = point.z();  // z
-          // Other features would be filled here in a complete implementation
-        }
+        // Transform to ego-centric coordinates (simplified - should use proper transformation
+        // matrix)
+        const float ego_relative_x = point.x() - ego_x;
+        const float ego_relative_y = point.y() - ego_y;
+
+        lane_tensor_data[base_idx + 0] = ego_relative_x;  // x in ego frame
+        lane_tensor_data[base_idx + 1] = ego_relative_y;  // y in ego frame
+        // Additional features like dX, dY, boundaries, traffic lights, speed limits would be added
+        // here This matches the Python version's lane tensor structure
       }
     }
 
@@ -554,7 +622,8 @@ private:
     aoba::SaveArrayAsNumpy(npy_filename, 3, shape, lane_tensor_data.data());
 
     std::cout << "  Saved lanes: " << npy_filename << " (shape: " << max_lane_num << ", "
-              << max_lane_len << ", " << lane_feature_dim << ")" << std::endl;
+              << max_lane_len << ", " << lane_feature_dim << ") filtered: " << num_segments_to_use
+              << "/" << lane_segments.size() << std::endl;
   }
 
   void saveStaticObjects(const std::string & token)
@@ -580,7 +649,8 @@ private:
 
   void saveRouteLanes(
     const std::string & token,
-    const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
+    const std::vector<autoware::diffusion_planner::LaneSegment> & route_lane_segments, double ego_x,
+    double ego_y)
   {
     const std::string filename = config_.save_dir + "/route_lanes_" + token + ".npy";
     // Create route lanes data using dimensions from dimensions.hpp
@@ -593,23 +663,29 @@ private:
     std::vector<float> route_lanes_data(
       num_route_lanes * route_lane_len * route_lane_features, 0.0f);
 
-    // Fill with actual route lane data (simplified version using available lane_segments)
-    for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(num_route_lanes));
-         ++i) {
-      const autoware::diffusion_planner::LaneSegment & segment = lane_segments[i];
+    // Fill with route lane data (no sorting for route lanes, like Python's do_sort=False)
+    const size_t num_segments_to_use =
+      std::min(route_lane_segments.size(), static_cast<size_t>(num_route_lanes));
+    for (size_t i = 0; i < num_segments_to_use; ++i) {
+      const autoware::diffusion_planner::LaneSegment & segment = route_lane_segments[i];
       const std::vector<autoware::diffusion_planner::LanePoint> & waypoints =
         segment.polyline.waypoints();
 
-      for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(route_lane_len)); ++j) {
+      const size_t num_points_to_use =
+        std::min(waypoints.size(), static_cast<size_t>(route_lane_len));
+      for (size_t j = 0; j < num_points_to_use; ++j) {
         const autoware::diffusion_planner::LanePoint & point = waypoints[j];
-        size_t base_idx = i * route_lane_len * route_lane_features + j * route_lane_features;
+        const size_t base_idx = i * route_lane_len * route_lane_features + j * route_lane_features;
 
-        if (base_idx + 2 < route_lanes_data.size()) {
-          route_lanes_data[base_idx + 0] = point.x();  // x
-          route_lanes_data[base_idx + 1] = point.y();  // y
-          route_lanes_data[base_idx + 2] = point.z();  // z
-          // Other features would be filled here in a complete implementation
-        }
+        // Transform to ego-centric coordinates (simplified - should use proper transformation
+        // matrix)
+        const float ego_relative_x = point.x() - ego_x;
+        const float ego_relative_y = point.y() - ego_y;
+
+        route_lanes_data[base_idx + 0] = ego_relative_x;  // x in ego frame
+        route_lanes_data[base_idx + 1] = ego_relative_y;  // y in ego frame
+        // Additional features like dX, dY, boundaries, traffic lights, speed limits would be added
+        // here This matches the Python version's route lane tensor structure
       }
     }
 
@@ -620,7 +696,9 @@ private:
     aoba::SaveArrayAsNumpy(filename, 3, shape, route_lanes_data.data());
 
     std::cout << "  Saved route_lanes: " << filename << " (shape: " << num_route_lanes << ", "
-              << route_lane_len << ", " << route_lane_features << ")" << std::endl;
+              << route_lane_len << ", " << route_lane_features
+              << ") segments: " << num_segments_to_use << "/" << route_lane_segments.size()
+              << std::endl;
   }
 
   void saveTurnIndicator(const std::string & token, int64_t turn_indicator_value)
