@@ -20,6 +20,7 @@
 #include "autoware/diffusion_planner/dimensions.hpp"
 #include "autoware/diffusion_planner/postprocessing/postprocessing_utils.hpp"
 #include "autoware/diffusion_planner/preprocessing/preprocessing_utils.hpp"
+#include "autoware/diffusion_planner/utils/feature_creation.hpp"
 #include "autoware/diffusion_planner/utils/marker_utils.hpp"
 #include "autoware/diffusion_planner/utils/utils.hpp"
 
@@ -425,96 +426,39 @@ InputDataMap DiffusionPlanner::create_input_data()
   const auto & map_to_ego_transform = transforms_.second;
   const auto & center_x = static_cast<float>(ego_kinematic_state->pose.pose.position.x);
   const auto & center_y = static_cast<float>(ego_kinematic_state->pose.pose.position.y);
+  const auto & current_pose = ego_kinematic_state->pose.pose;
 
-  // Ego history
-  {
-    input_data_map["ego_agent_past"] = create_ego_agent_past(map_to_ego_transform);
-  }
-  // Ego state
-  {
-    EgoState ego_state(
-      *ego_kinematic_state, *ego_acceleration, static_cast<float>(vehicle_info_.wheel_base_m));
-    input_data_map["ego_current_state"] = ego_state.as_array();
-  }
-  // Agent data on ego reference frame
-  {
-    input_data_map["neighbor_agents_past"] =
-      get_ego_centric_agent_data(*objects, map_to_ego_transform).as_vector();
-  }
-  // Static objects
-  // TODO(Daniel): add static objects
-  {
-    input_data_map["static_objects"] = utils::create_float_data(
-      std::vector<int64_t>(STATIC_OBJECTS_SHAPE.begin(), STATIC_OBJECTS_SHAPE.end()), 0.0f);
+  // Check route availability before processing features
+  const auto [route_lanes, route_lanes_speed_limit] = utils::create_route_lanes_feature(
+    map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
+    lanelet_map_ptr_, route_handler_, current_pose);
+
+  if (route_lanes.empty()) {
+    RCLCPP_ERROR_STREAM_THROTTLE(
+      get_logger(), *this->get_clock(), constants::LOG_THROTTLE_INTERVAL_MS,
+      "failed to find closest lanelet within route!!!");
+    return {};
   }
 
-  // map data on ego reference frame
-  {
-    std::tuple<Eigen::MatrixXf, ColLaneIDMaps> matrix_mapping_tuple =
-      preprocess::transform_and_select_rows(
-        map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
-        lanelet_map_ptr_, center_x, center_y, LANES_SHAPE[1]);
-    const Eigen::MatrixXf & ego_centric_lane_segments = std::get<0>(matrix_mapping_tuple);
-    input_data_map["lanes"] = preprocess::extract_lane_tensor_data(ego_centric_lane_segments);
-    input_data_map["lanes_speed_limit"] =
-      preprocess::extract_lane_speed_tensor_data(ego_centric_lane_segments);
-  }
-
-  // route data on ego reference frame
-  {
-    const auto & current_pose = ego_kinematic_state->pose.pose;
-    constexpr double backward_path_length{constants::BACKWARD_PATH_LENGTH_M};
-    constexpr double forward_path_length{constants::FORWARD_PATH_LENGTH_M};
-    lanelet::ConstLanelet current_preferred_lane;
-
-    if (
-      !route_handler_->isHandlerReady() || !route_handler_->getClosestPreferredLaneletWithinRoute(
-                                             current_pose, &current_preferred_lane)) {
-      RCLCPP_ERROR_STREAM_THROTTLE(
-        get_logger(), *this->get_clock(), constants::LOG_THROTTLE_INTERVAL_MS,
-        "failed to find closest lanelet within route!!!");
-      return {};
-    }
-    auto current_lanes = route_handler_->getLaneletSequence(
-      current_preferred_lane, backward_path_length, forward_path_length);
-
-    const auto [route_lanes, route_lanes_speed_limit] = preprocess::get_route_segments(
-      map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
-      lanelet_map_ptr_, current_lanes);
-    input_data_map["route_lanes"] = route_lanes;
-    input_data_map["route_lanes_speed_limit"] = route_lanes_speed_limit;
-  }
-
-  // goal pose
-  {
-    const auto & goal_pose = route_handler_->getGoalPose();
-
-    // Convert goal pose to 4x4 transformation matrix
-    const Eigen::Matrix4f goal_pose_map_4x4 = utils::pose_to_matrix4f(goal_pose);
-
-    // Transform to ego frame
-    const Eigen::Matrix4f goal_pose_ego_4x4 = map_to_ego_transform * goal_pose_map_4x4;
-
-    // Extract relative position
-    const float x = goal_pose_ego_4x4(0, 3);
-    const float y = goal_pose_ego_4x4(1, 3);
-
-    // Extract heading as cos/sin from rotation matrix
-    const auto [cos_yaw, sin_yaw] =
-      utils::rotation_matrix_to_cos_sin(goal_pose_ego_4x4.block<3, 3>(0, 0));
-
-    input_data_map["goal_pose"] = std::vector<float>{x, y, cos_yaw, sin_yaw};
-  }
-
-  // ego shape
-  {
-    const float wheel_base = static_cast<float>(vehicle_info_.wheel_base_m);
-    const float vehicle_length = static_cast<float>(
-      vehicle_info_.front_overhang_m + vehicle_info_.wheel_base_m + vehicle_info_.rear_overhang_m);
-    const float vehicle_width = static_cast<float>(
-      vehicle_info_.left_overhang_m + vehicle_info_.wheel_tread_m + vehicle_info_.right_overhang_m);
-    input_data_map["ego_shape"] = std::vector<float>{wheel_base, vehicle_length, vehicle_width};
-  }
+  // Create all features
+  input_data_map["ego_agent_past"] =
+    utils::create_ego_agent_past(ego_history_, map_to_ego_transform);
+  input_data_map["ego_current_state"] =
+    utils::create_ego_current_state(*ego_kinematic_state, *ego_acceleration, vehicle_info_);
+  input_data_map["neighbor_agents_past"] =
+    utils::create_neighbor_agents_past(*objects, map_to_ego_transform);
+  input_data_map["static_objects"] = utils::create_static_objects();
+  input_data_map["lanes"] = utils::create_lanes_feature(
+    map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
+    lanelet_map_ptr_, center_x, center_y);
+  input_data_map["lanes_speed_limit"] = utils::create_lanes_speed_limit(
+    map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
+    lanelet_map_ptr_, center_x, center_y);
+  input_data_map["route_lanes"] = route_lanes;
+  input_data_map["route_lanes_speed_limit"] = route_lanes_speed_limit;
+  input_data_map["goal_pose"] =
+    utils::create_goal_pose_feature(route_handler_, map_to_ego_transform);
+  input_data_map["ego_shape"] = utils::create_ego_shape_feature(vehicle_info_);
 
   return input_data_map;
 }
