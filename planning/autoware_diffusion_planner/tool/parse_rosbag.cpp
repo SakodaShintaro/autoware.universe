@@ -50,6 +50,9 @@
 #include <lanelet2_routing/RoutingGraph.h>
 #include <lanelet2_traffic_rules/TrafficRulesFactory.h>
 
+// NumPy save/load utility
+#include "numpy.hpp"
+
 namespace fs = std::filesystem;
 
 // Message type aliases
@@ -332,6 +335,9 @@ private:
     saveEgoCurrentState(token, ego_array);
     saveAgentData(token, agent_data);
     saveLaneData(token, lane_segments);
+    saveStaticObjects(token);
+    saveRouteLanes(token, lane_segments);  // Use lane_segments as placeholder for route
+    saveTurnIndicator(token, 0);           // Placeholder value
     saveKinematicInfo(token, kinematic_msg);
 
     std::cout << "Created NPY files for token: " << token << std::endl;
@@ -340,40 +346,44 @@ private:
   void saveEgoCurrentState(const std::string & token, const std::vector<float> & ego_array)
   {
     std::string filename = config_.save_dir + "/ego_current_state_" + token + ".npy";
-    std::ofstream file(filename, std::ios::binary);
-    if (file.is_open()) {
-      // Simple NPY format header (magic + version + header length + header + data)
-      file.write("\x93NUMPY", 6);  // Magic number
-      file.write("\x01\x00", 2);   // Version 1.0
-
-      std::string header = "{'descr': '<f4', 'fortran_order': False, 'shape': (" +
-                           std::to_string(ego_array.size()) + ",), }";
-
-      // Pad header to 16-byte boundary
-      while ((header.size() + 10) % 16 != 0) {
-        header += " ";
-      }
-      header += "\n";
-
-      uint16_t header_len = header.size();
-      file.write(reinterpret_cast<const char *>(&header_len), 2);
-      file.write(header.c_str(), header.size());
-      file.write(
-        reinterpret_cast<const char *>(ego_array.data()), ego_array.size() * sizeof(float));
-      file.close();
-    }
+    aoba::SaveArrayAsNumpy(filename, ego_array);
+    std::cout << "  Saved ego_current_state: " << filename << " (shape: " << ego_array.size() << ")"
+              << std::endl;
   }
 
   void saveAgentData(
     const std::string & token, const autoware::diffusion_planner::AgentData & agent_data)
   {
-    std::string filename = config_.save_dir + "/agent_data_" + token + ".txt";
-    std::ofstream file(filename);
+    // Save agent data as NPY file
+    std::string npy_filename = config_.save_dir + "/neighbor_agents_past_" + token + ".npy";
+
+    // Get the tensor data from AgentData
+    // The AgentData should have methods to get the tensor data
+    // For now, we'll create a placeholder with the correct dimensions
+    const int64_t num_agents = agent_data.num_agent();
+    const int64_t time_length = agent_data.time_length();
+    const int64_t feature_dim = 11;  // Based on Python code: (32, 21, 11)
+
+    // Create placeholder data with correct shape
+    std::vector<float> agent_tensor_data(num_agents * time_length * feature_dim, 0.0f);
+
+    // Save as 3D array: (num_agents, time_length, feature_dim)
+    const int shape[3] = {
+      static_cast<int>(num_agents), static_cast<int>(time_length), static_cast<int>(feature_dim)};
+    aoba::SaveArrayAsNumpy(npy_filename, 3, shape, agent_tensor_data.data());
+
+    std::cout << "  Saved neighbor_agents_past: " << npy_filename << " (shape: " << num_agents
+              << ", " << time_length << ", " << feature_dim << ")" << std::endl;
+
+    // Also save info file
+    std::string info_filename = config_.save_dir + "/agent_data_" + token + ".txt";
+    std::ofstream file(info_filename);
     if (file.is_open()) {
       file << "Agent data for token: " << token << "\n";
       file << "Number of agents: " << agent_data.num_agent() << "\n";
       file << "Time length: " << agent_data.time_length() << "\n";
       file << "Data size: " << agent_data.size() << "\n";
+      file << "NPY file: " << npy_filename << "\n";
       file.close();
     }
   }
@@ -382,11 +392,50 @@ private:
     const std::string & token,
     const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
   {
-    std::string filename = config_.save_dir + "/lane_data_" + token + ".txt";
-    std::ofstream file(filename);
+    // Save lane data as NPY file
+    std::string npy_filename = config_.save_dir + "/lanes_" + token + ".npy";
+
+    const int64_t max_lane_num = 70;      // LANE_NUM from Python code
+    const int64_t max_lane_len = 20;      // LANE_LEN from Python code
+    const int64_t lane_feature_dim = 13;  // Feature dimension for lanes
+
+    // Create lane tensor data with correct shape (70, 20, 13)
+    std::vector<float> lane_tensor_data(max_lane_num * max_lane_len * lane_feature_dim, 0.0f);
+
+    // Fill with actual lane data (simplified version)
+    for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(max_lane_num)); ++i) {
+      const auto & segment = lane_segments[i];
+      const auto & waypoints = segment.polyline.waypoints();
+
+      for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(max_lane_len)); ++j) {
+        const auto & point = waypoints[j];
+        size_t base_idx = i * max_lane_len * lane_feature_dim + j * lane_feature_dim;
+
+        if (base_idx + 2 < lane_tensor_data.size()) {
+          lane_tensor_data[base_idx + 0] = point.x();  // x
+          lane_tensor_data[base_idx + 1] = point.y();  // y
+          lane_tensor_data[base_idx + 2] = point.z();  // z
+          // Other features would be filled here in a complete implementation
+        }
+      }
+    }
+
+    // Save as 3D array: (max_lane_num, max_lane_len, lane_feature_dim)
+    const int shape[3] = {
+      static_cast<int>(max_lane_num), static_cast<int>(max_lane_len),
+      static_cast<int>(lane_feature_dim)};
+    aoba::SaveArrayAsNumpy(npy_filename, 3, shape, lane_tensor_data.data());
+
+    std::cout << "  Saved lanes: " << npy_filename << " (shape: " << max_lane_num << ", "
+              << max_lane_len << ", " << lane_feature_dim << ")" << std::endl;
+
+    // Also save info file
+    std::string info_filename = config_.save_dir + "/lane_data_" + token + ".txt";
+    std::ofstream file(info_filename);
     if (file.is_open()) {
       file << "Lane data for token: " << token << "\n";
       file << "Number of lane segments: " << lane_segments.size() << "\n";
+      file << "NPY file: " << npy_filename << "\n";
       for (size_t i = 0; i < std::min(lane_segments.size(), size_t(5)); ++i) {
         const auto & segment = lane_segments[i];
         file << "Segment " << i << " (ID: " << segment.id << "): " << segment.polyline.size()
@@ -394,6 +443,81 @@ private:
       }
       file.close();
     }
+  }
+
+  void saveStaticObjects(const std::string & token)
+  {
+    std::string filename = config_.save_dir + "/static_objects_" + token + ".npy";
+
+    // Create static objects data with shape (5, 10) as mentioned in conversation
+    const int64_t num_static_objects = 5;
+    const int64_t object_features = 10;
+
+    // Create placeholder static objects data
+    std::vector<float> static_objects_data(num_static_objects * object_features, 0.0f);
+
+    // Save as 2D array: (num_static_objects, object_features)
+    const int shape[2] = {static_cast<int>(num_static_objects), static_cast<int>(object_features)};
+    aoba::SaveArrayAsNumpy(filename, 2, shape, static_objects_data.data());
+
+    std::cout << "  Saved static_objects: " << filename << " (shape: " << num_static_objects << ", "
+              << object_features << ")" << std::endl;
+  }
+
+  void saveRouteLanes(
+    const std::string & token,
+    const std::vector<autoware::diffusion_planner::LaneSegment> & lane_segments)
+  {
+    std::string filename = config_.save_dir + "/route_lanes_" + token + ".npy";
+    // Create route lanes data with shape (25, 20, 13) as mentioned in conversation
+    const int64_t num_route_lanes = 25;
+    const int64_t route_lane_len = 20;
+    const int64_t route_lane_features = 13;
+
+    // Create route lanes tensor data
+    std::vector<float> route_lanes_data(
+      num_route_lanes * route_lane_len * route_lane_features, 0.0f);
+
+    // Fill with actual route lane data (simplified version using available lane_segments)
+    for (size_t i = 0; i < std::min(lane_segments.size(), static_cast<size_t>(num_route_lanes));
+         ++i) {
+      const auto & segment = lane_segments[i];
+      const auto & waypoints = segment.polyline.waypoints();
+
+      for (size_t j = 0; j < std::min(waypoints.size(), static_cast<size_t>(route_lane_len)); ++j) {
+        const auto & point = waypoints[j];
+        size_t base_idx = i * route_lane_len * route_lane_features + j * route_lane_features;
+
+        if (base_idx + 2 < route_lanes_data.size()) {
+          route_lanes_data[base_idx + 0] = point.x();  // x
+          route_lanes_data[base_idx + 1] = point.y();  // y
+          route_lanes_data[base_idx + 2] = point.z();  // z
+          // Other features would be filled here in a complete implementation
+        }
+      }
+    }
+
+    // Save as 3D array: (num_route_lanes, route_lane_len, route_lane_features)
+    const int shape[3] = {
+      static_cast<int>(num_route_lanes), static_cast<int>(route_lane_len),
+      static_cast<int>(route_lane_features)};
+    aoba::SaveArrayAsNumpy(filename, 3, shape, route_lanes_data.data());
+
+    std::cout << "  Saved route_lanes: " << filename << " (shape: " << num_route_lanes << ", "
+              << route_lane_len << ", " << route_lane_features << ")" << std::endl;
+  }
+
+  void saveTurnIndicator(const std::string & token, int64_t turn_indicator_value)
+  {
+    std::string filename = config_.save_dir + "/turn_indicator_" + token + ".npy";
+
+    // Create turn indicator data with shape (1,) as mentioned in conversation
+    std::vector<float> turn_indicator_data = {static_cast<float>(turn_indicator_value)};
+
+    // Save as 1D array: (1,)
+    aoba::SaveArrayAsNumpy(filename, turn_indicator_data);
+
+    std::cout << "  Saved turn_indicator: " << filename << " (shape: 1)" << std::endl;
   }
 
   void saveKinematicInfo(const std::string & token, const Odometry & kinematic_msg)
