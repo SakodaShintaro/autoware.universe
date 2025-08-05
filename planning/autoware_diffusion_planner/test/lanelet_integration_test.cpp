@@ -462,7 +462,7 @@ TEST_F(LaneletIntegrationTest, AddTrafficLightOneHotEncodingToSegmentNoTrafficLi
   std::map<lanelet::Id, autoware::diffusion_planner::preprocess::TrafficSignalStamped>
     traffic_light_id_map;
   EXPECT_NO_THROW(
-    autoware::diffusion_planner::preprocess::add_traffic_light_one_hot_encoding_to_segment(
+    autoware::diffusion_planner::preprocess::get_traffic_light_status_int(
       input_matrix, col_id_mapping, traffic_light_id_map, lanelet_map_ptr_, 0, 0));
 }
 

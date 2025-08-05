@@ -75,36 +75,32 @@ std::vector<float> create_static_objects()
 }
 
 std::vector<float> create_lanes_feature(
-  const Eigen::MatrixXf & map_lane_segments_matrix, const Eigen::Matrix4f & map_to_ego_transform,
-  const preprocess::ColLaneIDMaps & col_id_mapping,
+  const std::map<int64_t, LaneSegment> & lane_segments,
+  const Eigen::Matrix4f & map_to_ego_transform,
   const std::map<lanelet::Id, preprocess::TrafficSignalStamped> & traffic_light_id_map,
   const std::shared_ptr<lanelet::LaneletMap> & lanelet_map_ptr, float center_x, float center_y)
 {
-  std::tuple<Eigen::MatrixXf, preprocess::ColLaneIDMaps> matrix_mapping_tuple =
-    preprocess::transform_and_select_rows(
-      map_lane_segments_matrix, map_to_ego_transform, col_id_mapping, traffic_light_id_map,
-      lanelet_map_ptr, center_x, center_y, LANES_SHAPE[1]);
-  const Eigen::MatrixXf & ego_centric_lane_segments = std::get<0>(matrix_mapping_tuple);
+  const Eigen::MatrixXf ego_centric_lane_segments = preprocess::transform_and_select_rows(
+    lane_segments, map_to_ego_transform, traffic_light_id_map, lanelet_map_ptr, center_x, center_y,
+    LANES_SHAPE[1]);
   return preprocess::extract_lane_tensor_data(ego_centric_lane_segments);
 }
 
 std::vector<float> create_lanes_speed_limit(
-  const Eigen::MatrixXf & map_lane_segments_matrix, const Eigen::Matrix4f & map_to_ego_transform,
-  const preprocess::ColLaneIDMaps & col_id_mapping,
+  const std::map<int64_t, LaneSegment> & lane_segments,
+  const Eigen::Matrix4f & map_to_ego_transform,
   const std::map<lanelet::Id, preprocess::TrafficSignalStamped> & traffic_light_id_map,
   const std::shared_ptr<lanelet::LaneletMap> & lanelet_map_ptr, float center_x, float center_y)
 {
-  std::tuple<Eigen::MatrixXf, preprocess::ColLaneIDMaps> matrix_mapping_tuple =
-    preprocess::transform_and_select_rows(
-      map_lane_segments_matrix, map_to_ego_transform, col_id_mapping, traffic_light_id_map,
-      lanelet_map_ptr, center_x, center_y, LANES_SHAPE[1]);
-  const Eigen::MatrixXf & ego_centric_lane_segments = std::get<0>(matrix_mapping_tuple);
+  const Eigen::MatrixXf ego_centric_lane_segments = preprocess::transform_and_select_rows(
+    lane_segments, map_to_ego_transform, traffic_light_id_map, lanelet_map_ptr, center_x, center_y,
+    LANES_SHAPE[1]);
   return preprocess::extract_lane_speed_tensor_data(ego_centric_lane_segments);
 }
 
 std::pair<std::vector<float>, std::vector<float>> create_route_lanes_feature(
-  const Eigen::MatrixXf & map_lane_segments_matrix, const Eigen::Matrix4f & map_to_ego_transform,
-  const preprocess::ColLaneIDMaps & col_id_mapping,
+  const std::map<int64_t, LaneSegment> & lane_segments_map,
+  const Eigen::Matrix4f & map_to_ego_transform,
   const std::map<lanelet::Id, preprocess::TrafficSignalStamped> & traffic_light_id_map,
   const std::shared_ptr<lanelet::LaneletMap> & lanelet_map_ptr,
   const std::shared_ptr<autoware::route_handler::RouteHandler> & route_handler,
@@ -124,8 +120,7 @@ std::pair<std::vector<float>, std::vector<float>> create_route_lanes_feature(
     current_preferred_lane, backward_path_length, forward_path_length);
 
   return preprocess::get_route_segments(
-    map_lane_segments_matrix, map_to_ego_transform, col_id_mapping, traffic_light_id_map,
-    lanelet_map_ptr, current_lanes);
+    lane_segments_map, map_to_ego_transform, traffic_light_id_map, lanelet_map_ptr, current_lanes);
 }
 
 std::vector<float> create_goal_pose_feature(

@@ -89,9 +89,8 @@ TEST_F(LaneSegmentsTest, ComputeDistancesThrowsOnBadCols)
   auto input_matrix = preprocess::process_segments_to_matrix(lane_segments_, col_id_mapping);
   // Remove a column to break divisibility
   Eigen::MatrixXf bad_matrix = input_matrix.leftCols(input_matrix.cols() - 1);
-  std::vector<preprocess::ColWithDistance> distances;
   EXPECT_THROW(
-    preprocess::compute_distances(bad_matrix, Eigen::Matrix4f::Identity(), distances, 0, 0, 100.0),
+    preprocess::compute_distances(bad_matrix, Eigen::Matrix4f::Identity(), 0, 0, 100.0),
     std::runtime_error);
 }
 

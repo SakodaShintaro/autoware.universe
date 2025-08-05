@@ -73,8 +73,7 @@ std::vector<float> create_static_objects();
  * @brief Create lanes feature from map data
  */
 std::vector<float> create_lanes_feature(
-  const Eigen::MatrixXf & map_lane_segments_matrix, const Eigen::Matrix4f & map_to_ego_transform,
-  const preprocess::ColLaneIDMaps & col_id_mapping,
+  const std::map<int64_t, LaneSegment> & lane_segments, const Eigen::Matrix4f & map_to_ego_transform,
   const std::map<lanelet::Id, preprocess::TrafficSignalStamped> & traffic_light_id_map,
   const std::shared_ptr<lanelet::LaneletMap> & lanelet_map_ptr, float center_x, float center_y);
 
@@ -82,8 +81,7 @@ std::vector<float> create_lanes_feature(
  * @brief Create lanes speed limit feature
  */
 std::vector<float> create_lanes_speed_limit(
-  const Eigen::MatrixXf & map_lane_segments_matrix, const Eigen::Matrix4f & map_to_ego_transform,
-  const preprocess::ColLaneIDMaps & col_id_mapping,
+  const std::map<int64_t, LaneSegment> & lane_segments, const Eigen::Matrix4f & map_to_ego_transform,
   const std::map<lanelet::Id, preprocess::TrafficSignalStamped> & traffic_light_id_map,
   const std::shared_ptr<lanelet::LaneletMap> & lanelet_map_ptr, float center_x, float center_y);
 
@@ -91,8 +89,7 @@ std::vector<float> create_lanes_speed_limit(
  * @brief Create route lanes feature
  */
 std::pair<std::vector<float>, std::vector<float>> create_route_lanes_feature(
-  const Eigen::MatrixXf & map_lane_segments_matrix, const Eigen::Matrix4f & map_to_ego_transform,
-  const preprocess::ColLaneIDMaps & col_id_mapping,
+  const std::map<int64_t, LaneSegment> & lane_segments_map, const Eigen::Matrix4f & map_to_ego_transform,
   const std::map<lanelet::Id, preprocess::TrafficSignalStamped> & traffic_light_id_map,
   const std::shared_ptr<lanelet::LaneletMap> & lanelet_map_ptr,
   const std::shared_ptr<autoware::route_handler::RouteHandler> & route_handler,

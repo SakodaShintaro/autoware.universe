@@ -286,9 +286,7 @@ public:
   std::shared_ptr<lanelet::traffic_rules::TrafficRules> traffic_rules_ptr_;
   std::map<lanelet::Id, TrafficSignalStamped> traffic_light_id_map_;
   std::unique_ptr<LaneletConverter> lanelet_converter_ptr_;
-  std::vector<LaneSegment> lane_segments_;
-  Eigen::MatrixXf map_lane_segments_matrix_;
-  ColLaneIDMaps col_id_mapping_;
+  std::map<int64_t, LaneSegment> lane_segments_map_;
   bool is_map_loaded_{false};
 
   // Node elements

@@ -430,8 +430,8 @@ InputDataMap DiffusionPlanner::create_input_data()
 
   // Check route availability before processing features
   const auto [route_lanes, route_lanes_speed_limit] = utils::create_route_lanes_feature(
-    map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
-    lanelet_map_ptr_, route_handler_, current_pose);
+    lane_segments_map_, map_to_ego_transform, traffic_light_id_map_, lanelet_map_ptr_,
+    route_handler_, current_pose);
 
   if (route_lanes.empty()) {
     RCLCPP_ERROR_STREAM_THROTTLE(
@@ -449,11 +449,11 @@ InputDataMap DiffusionPlanner::create_input_data()
     utils::create_neighbor_agents_past(*objects, map_to_ego_transform);
   input_data_map["static_objects"] = utils::create_static_objects();
   input_data_map["lanes"] = utils::create_lanes_feature(
-    map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
-    lanelet_map_ptr_, center_x, center_y);
+    lane_segments_map_, map_to_ego_transform, traffic_light_id_map_, lanelet_map_ptr_, center_x,
+    center_y);
   input_data_map["lanes_speed_limit"] = utils::create_lanes_speed_limit(
-    map_lane_segments_matrix_, map_to_ego_transform, col_id_mapping_, traffic_light_id_map_,
-    lanelet_map_ptr_, center_x, center_y);
+    lane_segments_map_, map_to_ego_transform, traffic_light_id_map_, lanelet_map_ptr_, center_x,
+    center_y);
   input_data_map["route_lanes"] = route_lanes;
   input_data_map["route_lanes_speed_limit"] = route_lanes_speed_limit;
   input_data_map["goal_pose"] =
@@ -665,15 +665,12 @@ void DiffusionPlanner::on_map(const HADMapBin::ConstSharedPtr map_msg)
     lanelet_map_ptr_, constants::LaneletConverterParams::MAX_LANELETS,
     constants::LaneletConverterParams::MAX_POINTS_PER_LANE,
     constants::LaneletConverterParams::SEARCH_RADIUS_M);
-  lane_segments_ = lanelet_converter_ptr_->convert_to_lane_segments(POINTS_PER_SEGMENT);
+  lane_segments_map_ = lanelet_converter_ptr_->convert_to_lane_segments(POINTS_PER_SEGMENT);
 
-  if (lane_segments_.empty()) {
+  if (lane_segments_map_.empty()) {
     RCLCPP_ERROR(get_logger(), "No lane segments found in the map");
     throw std::runtime_error("No lane segments found in the map");
   }
-
-  map_lane_segments_matrix_ =
-    preprocess::process_segments_to_matrix(lane_segments_, col_id_mapping_);
 
   route_handler_->setMap(*map_msg);
   is_map_loaded_ = true;

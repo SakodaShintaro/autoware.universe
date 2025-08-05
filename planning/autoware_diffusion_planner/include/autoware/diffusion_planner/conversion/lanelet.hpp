@@ -183,6 +183,8 @@ struct LaneSegment
   std::vector<BoundarySegment> right_boundaries;
   std::optional<float> speed_limit_mps{std::nullopt};
 
+  LaneSegment() = default;
+
   LaneSegment(
     int64_t id, Polyline polyline, bool is_intersection,
     const std::vector<BoundarySegment> & left_boundaries,
@@ -194,6 +196,21 @@ struct LaneSegment
     right_boundaries(right_boundaries),
     speed_limit_mps(speed_limit_mps)
   {
+  }
+
+  float meanX() const
+  {
+    return std::accumulate(
+             polyline.waypoints().begin(), polyline.waypoints().end(), 0.0f,
+             [](float sum, const LanePoint & pt) { return sum + pt.x(); }) /
+           static_cast<float>(polyline.size());
+  }
+  float meanY() const
+  {
+    return std::accumulate(
+             polyline.waypoints().begin(), polyline.waypoints().end(), 0.0f,
+             [](float sum, const LanePoint & pt) { return sum + pt.y(); }) /
+           static_cast<float>(polyline.size());
   }
 };
 
@@ -237,7 +254,7 @@ public:
    * @brief Convert a lanelet map to line segment data
    * @return std::vector<LaneSegment>
    */
-  [[nodiscard]] std::vector<LaneSegment> convert_to_lane_segments(
+  [[nodiscard]] std::map<int64_t, LaneSegment> convert_to_lane_segments(
     const int64_t num_lane_points) const;
 
   /**
@@ -250,7 +267,7 @@ public:
   [[nodiscard]] Eigen::MatrixXf process_segment_to_matrix(
     const LaneSegment & segment, float center_x, float center_y, float mask_range) const;
 
-  [[nodiscard]] Eigen::MatrixXf process_segments_to_matrix(
+  [[nodiscard]] std::map<int64_t, LaneSegment> process_segments_to_matrix(
     const std::vector<LaneSegment> & lane_segments,
     std::map<int64_t, int64_t> & segment_row_indices, float center_x, float center_y,
     float mask_range) const;

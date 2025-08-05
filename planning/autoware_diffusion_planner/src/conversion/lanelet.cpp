@@ -130,11 +130,10 @@ std::vector<LanePoint> interpolate_points(const std::vector<LanePoint> & input, 
   return result;
 }
 
-std::vector<LaneSegment> LaneletConverter::convert_to_lane_segments(
+std::map<int64_t, LaneSegment> LaneletConverter::convert_to_lane_segments(
   const int64_t num_lane_points) const
 {
-  std::vector<LaneSegment> lane_segments;
-  lane_segments.reserve(lanelet_map_ptr_->laneletLayer.size());
+  std::map<int64_t, LaneSegment> lane_segments_map;
   // parse lanelet layers
   for (const auto & lanelet : lanelet_map_ptr_->laneletLayer) {
     const auto lanelet_subtype = to_subtype_name(lanelet);
@@ -159,17 +158,16 @@ std::vector<LaneSegment> LaneletConverter::convert_to_lane_segments(
 
     const auto & attrs = lanelet.attributes();
     bool is_intersection = attrs.find("turn_direction") != attrs.end();
-    std::optional<float> speed_limit_mps =
-      attrs.find("speed_limit") != attrs.end()
-        ? std::make_optional(
-            autoware_utils_math::kmph2mps(std::stof(attrs.at("speed_limit").value())))
-        : std::nullopt;
-
-    lane_segments.emplace_back(
-      lanelet.id(), lane_polyline, is_intersection, left_boundary_segments, right_boundary_segments,
+    std::optional<float> speed_limit_mps = attrs.find("speed_limit") != attrs.end()
+                                             ? std::make_optional(autoware_utils_math::kmph2mps(
+                                                 std::stof(attrs.at("speed_limit").value())))
+                                             : std::nullopt;
+    const int64_t id = lanelet.id();
+    lane_segments_map[id] = LaneSegment(
+      id, lane_polyline, is_intersection, left_boundary_segments, right_boundary_segments,
       speed_limit_mps);
   }
-  return lane_segments;
+  return lane_segments_map;
 }
 
 std::optional<PolylineData> LaneletConverter::convert(
